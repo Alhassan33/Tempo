@@ -5,7 +5,9 @@ import { useAdminProjects, useSubmitProject } from "@/hooks/useSupabase";
 
 // ─── Admin wallet addresses (add yours here) ──────────────────────────────────
 const ADMIN_WALLETS = [
-  // "0x8dd4561cf6fa3ca2024a55db36702ce559318d6c",
+  "0x8dd4561cf6fa3ca2024a55db36702ce559318d6c",
+  "0x630964adaae799971115518352a0d805d479df51",
+  "0x4f492db351b111676ec2b5937c0730af1e93d9b0",
 ];
 
 const STATUS_COLORS = {
