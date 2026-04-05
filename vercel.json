@@ -1,15 +1,9 @@
 {
-  "buildCommand": "pnpm run build",
-  "outputDirectory": "dist",
+  "buildCommand": "pnpm --filter @workspace/nft-marketplace run build",
+  "outputDirectory": "artifacts/nft-marketplace/dist",
+  "installCommand": "pnpm install",
+  "framework": null,
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)",     "destination": "/index.html" }
-  ],
-  "crons": [
-    { "path": "/api/cron/discover",           "schedule": "*/10 * * * *" },
-    { "path": "/api/cron/index-collections",  "schedule": "* * * * *"    },
-    { "path": "/api/cron/index-activity",     "schedule": "*/2 * * * *"  },
-    { "path": "/api/cron/index-ownership",    "schedule": "*/5 * * * *"  },
-    { "path": "/api/cron/index-images",       "schedule": "*/30 * * * *" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
