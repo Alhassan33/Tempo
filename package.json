@@ -10,7 +10,8 @@
     "lint": "eslint src --ext .js,.jsx"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.62.7",
+    "@rainbow-me/rainbowkit": "^2.2.10",
+    "@tanstack/react-query": "^5.96.2",
     "@wagmi/connectors": "^5.7.4",
     "@wagmi/core": "^2.16.4",
     "lucide-react": "^0.468.0",
@@ -18,8 +19,8 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.2",
     "recharts": "^2.15.0",
-    "viem": "^2.21.54",
-    "wagmi": "^2.14.11"
+    "viem": "^2.47.10",
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
