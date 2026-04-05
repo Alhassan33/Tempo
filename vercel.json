@@ -1,0 +1,9 @@
+{
+  "buildCommand": "pnpm --filter @workspace/nft-marketplace run build",
+  "outputDirectory": "artifacts/nft-marketplace/dist/public",
+  "installCommand": "pnpm install",
+  "framework": null,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
