@@ -1,0 +1,8 @@
+{
+  "name": "TEMPONYAN",
+  "description": "NFT Marketplace and Launchpad on Tempo Chain",
+  "version": "1.0.0",
+  "url": "https://temponyan.vercel.app",
+  "chain": "Tempo Chain",
+  "chainId": 1
+}
