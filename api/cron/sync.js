@@ -20,29 +20,19 @@ const CONTRACT = MARKETPLACE_ADDRESS.toLowerCase();
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).end();
 
+  // ─── AUTH CHECK ───
+  // Vercel sends the secret in the Authorization header as a Bearer token
+  const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+  
+  // Use CRON_KEY to match your environment variable setting
+  if (authHeader !== `Bearer ${process.env.CRON_KEY}`) {
+    console.error("[sync] Unauthorized: Secret mismatch or missing");
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
   console.log("[sync] starting at", new Date().toISOString());
   const db = getDb();
-
-  try {
-    // ── 1. Get last synced block ──────────────────────────────────────────────
-    const { data: stateRow } = await db
-      .from("indexer_state")
-      .select("last_block")
-      .eq("contract", MARKETPLACE_ADDRESS)
-      .single();
-
-    const lastBlock = BigInt(stateRow?.last_block || 0);
-    const latestBlock = await getLatestBlock();
-
-    if (lastBlock >= latestBlock) {
-      console.log("[sync] already up to date at block", latestBlock);
-      return res.status(200).json({ ok: true, synced: 0, block: latestBlock.toString() });
-    }
-
-    const fromBlock = lastBlock === 0n ? latestBlock - 10000n : lastBlock + 1n;
-    const safeFrom = fromBlock < 0n ? 0n : fromBlock;
-
-    console.log(`[sync] scanning blocks ${safeFrom} → ${latestBlock}`);
+  // ... rest of your code
 
     let synced = 0;
 
