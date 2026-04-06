@@ -302,11 +302,8 @@ function MintWidget({ phase, nftContract, onSuccess }) {
 export default function MintPage() {
   const { slug }    = useParams();
   const navigate    = useNavigate();
-  const { projects, isLoading: projectsLoading } = useFeaturedProjects();
-
-  const project = useMemo(
-    () => projects.find(p => p.id === slug || p.contract_address?.toLowerCase() === slug?.toLowerCase()),
-    [projects, slug]
+  const { projects, isLoading: import { useProject } from "@/hooks/useSupabase";
+const { project, isLoading: projectsLoading } = useProject(slug);
   );
 
   const nftContract = project?.contract_address;
