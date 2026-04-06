@@ -1,43 +1,64 @@
 import { useState, useEffect } from "react";
-import { API_BASE } from "@/config/index.js";
-import { cacheGet, cacheSet } from "@/utils/persistentCache.js";
+import { supabase } from "../lib/supabase";
+import { Collection } from "./useSupabase"; // Importing the interface we defined earlier
 
-export function useCollections() {
-  const [collections, setCollections] = useState([]);
+export function useCollections(sortBy: string = "volume_total") {
+  const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const cached = cacheGet("collections");
-    if (cached) { setCollections(cached); setLoading(false); return; }
+    async function fetchAll() {
+      setLoading(true);
+      const { data, error: sbError } = await supabase
+        .from("collections")
+        .select("*")
+        .order(sortBy, { ascending: false });
 
-    fetch(`${API_BASE}/collections`)
-      .then((r) => r.json())
-      .then((data) => { cacheSet("collections", data); setCollections(data); })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
+      if (sbError) {
+        setError(sbError.message);
+      } else {
+        setCollections(data || []);
+      }
+      setLoading(false);
+    }
+    fetchAll();
+  }, [sortBy]);
 
   return { collections, loading, error };
 }
 
-export function useCollection(id) {
-  const [collection, setCollection] = useState(null);
+export function useCollection(slugOrAddress: string) {
+  const [collection, setCollection] = useState<Collection | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!id) return;
-    const key = `collection_${id}`;
-    const cached = cacheGet(key);
-    if (cached) { setCollection(cached); setLoading(false); return; }
+    if (!slugOrAddress) return;
 
-    fetch(`${API_BASE}/collections?id=${id}`)
-      .then((r) => r.json())
-      .then((data) => { cacheSet(key, data); setCollection(data); })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [id]);
+    async function fetchOne() {
+      setLoading(true);
+      
+      // Determine if the input is a contract address or a URL slug
+      const isAddress = slugOrAddress.startsWith("0x");
+      const column = isAddress ? "contract_address" : "slug";
+
+      const { data, error: sbError } = await supabase
+        .from("collections")
+        .select("*")
+        .eq(column, slugOrAddress)
+        .single();
+
+      if (sbError) {
+        setError(sbError.message);
+      } else {
+        setCollection(data);
+      }
+      setLoading(false);
+    }
+
+    fetchOne();
+  }, [slugOrAddress]);
 
   return { collection, loading, error };
 }
