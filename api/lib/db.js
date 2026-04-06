@@ -1,16 +1,12 @@
-/**
- * api/lib/db.js
- * Database client helper.
- * Swap this stub for a real Postgres/Supabase/PlanetScale client as needed.
- */
+import { createClient } from "@supabase/supabase-js";
 
 let _client = null;
 
 export function getDb() {
   if (_client) return _client;
-  // TODO: replace with real DB client, e.g.
-  // import { createClient } from '@supabase/supabase-js'
-  // _client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
-  _client = { query: async () => ({ rows: [] }) };
+  _client = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY // use service role for server-side writes
+  );
   return _client;
 }
