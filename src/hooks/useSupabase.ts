@@ -53,27 +53,25 @@ export interface Listing {
 
 // ─── 1. useCollections ────────────────────────────────────────────────────────
 // Fetch all collections for the marketplace table
-export function useCollections(sortBy: string = "volume_total") {
-  const [collections, setCollections] = useState<Collection[]>([]);
+export function useProject(slugOrId) {
+  const [project, setProject] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!slugOrId) return;
     async function fetch() {
-      setIsLoading(true);
-      const { data, error } = await supabase
-        .from("collections")
+      const { data } = await supabase
+        .from("projects")
         .select("*")
-        .order(sortBy, { ascending: false });
-
-      if (error) setError(error.message);
-      else setCollections(data || []);
+        .or(`id.eq.${slugOrId},contract_address.ilike.${slugOrId}`)
+        .single();
+      setProject(data);
       setIsLoading(false);
     }
     fetch();
-  }, [sortBy]);
+  }, [slugOrId]);
 
-  return { collections, isLoading, error };
+  return { project, isLoading };
 }
 
 // ─── 2. useCollection ─────────────────────────────────────────────────────────
