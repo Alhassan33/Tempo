@@ -6,7 +6,7 @@ import {
   MARKETPLACE_ABI,
   ERC20_ABI,
   ERC721_ABI,
-} from "./contracts";
+} from "../contracts/contracts"; 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface Listing {
