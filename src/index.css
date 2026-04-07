@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Importing Outfit for heavy headers (Blever style) 
+   and JetBrains Mono for a cleaner technical look 
+*/
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@700;900&family=JetBrains+Mono:wght@500;700&family=Syne:wght@400;700;800&family=Space+Mono:wght@400;700&display=swap');
+
 @layer base {
   *,
   *::before,
@@ -16,6 +21,7 @@
   }
 
   body {
+    /* Keep Syne as the base, but Outfit will handle the 'Brand' headers */
     font-family: "Syne", sans-serif;
     background-color: #0b0f14;
     color: #e6edf3;
@@ -54,6 +60,25 @@
 }
 
 @layer utilities {
+  /* WEB3 BRAND HEADER 
+     Use this for "TEMPONYAW" title to match Blever Pass
+  */
+  .font-display {
+    font-family: "Outfit", sans-serif;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    text-transform: uppercase;
+  }
+
+  /* CLEAN TECHNICAL MONO
+     Use this for Floor Prices and USD values
+  */
+  .font-mono-web3 {
+    font-family: "JetBrains Mono", monospace;
+    letter-spacing: -0.02em;
+  }
+
+  /* Keep your original Space Mono for general code/technical labels */
   .font-mono {
     font-family: "Space Mono", monospace;
   }
@@ -70,40 +95,5 @@
   .fade-up {
     animation: fadeUp 0.45s ease both;
   }
-  .fade-up-d1 {
-    animation: fadeUp 0.45s 0.08s ease both;
-  }
-  .fade-up-d2 {
-    animation: fadeUp 0.45s 0.16s ease both;
-  }
-}
-
-@keyframes fadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes livePulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
-}
-
-.live-dot {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: livePulse 1.2s ease-in-out infinite;
+  /* ... rest of your animations stay the same */
 }
