@@ -8,19 +8,23 @@
 import { createClient } from "@supabase/supabase-js";
 import { createPublicClient, http, parseAbiItem, defineChain } from "viem";
 
-// ─── Tempo Testnet ────────────────────────────────────────────────────────────
-const tempoTestnet = defineChain({
-  id: 42431,
-  name: "Tempo Testnet",
+// ─── Tempo Mainnet ────────────────────────────────────────────────────────────
+const tempoMainnet = defineChain({
+  id: 4217,
+  name: "Tempo",
   nativeCurrency: { name: "USD", symbol: "USD", decimals: 18 },
   rpcUrls: {
-    default: { http: ["https://rpc.moderato.tempo.xyz"] },
+    default: { http: ["https://rpc.tempo.xyz"] },
   },
+  blockExplorers: {
+    default: { name: "Tempo Explorer", url: "https://explore.tempo.xyz" },
+  },
+  testnet: false,
 });
 
 const publicClient = createPublicClient({
-  chain: tempoTestnet,
-  transport: http("https://rpc.moderato.tempo.xyz"),
+  chain:     tempoMainnet,
+  transport: http("https://rpc.tempo.xyz"),
 });
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -49,9 +53,9 @@ async function getLogs({ fromBlock, toBlock, event }) {
     try {
       const chunk = await publicClient.getLogs({
         address: MARKETPLACE_ADDRESS,
-        event: parseAbiItem(event),
+        event:   parseAbiItem(event),
         fromBlock: from,
-        toBlock: chunkTo,
+        toBlock:   chunkTo,
       });
       logs.push(...chunk);
     } catch (e) {
@@ -140,7 +144,7 @@ export default async function handler(req, res) {
       .eq("contract", MARKETPLACE_ADDRESS)
       .single();
 
-    const lastBlock = BigInt(stateRow?.last_block || 0);
+    const lastBlock   = BigInt(stateRow?.last_block || 0);
     const latestBlock = await publicClient.getBlockNumber();
 
     if (lastBlock >= latestBlock) {
@@ -159,7 +163,7 @@ export default async function handler(req, res) {
     // 2. Listed events
     const listedLogs = await getLogs({
       fromBlock: safeFrom,
-      toBlock: latestBlock,
+      toBlock:   latestBlock,
       event: "event Listed(uint256 indexed listingId, address indexed seller, address indexed nftContract, uint256 tokenId, uint256 price)",
     });
 
@@ -185,7 +189,7 @@ export default async function handler(req, res) {
     // 3. Sale events
     const saleLogs = await getLogs({
       fromBlock: safeFrom,
-      toBlock: latestBlock,
+      toBlock:   latestBlock,
       event: "event Sale(uint256 indexed listingId, address indexed buyer, uint256 price)",
     });
 
@@ -222,7 +226,7 @@ export default async function handler(req, res) {
     // 4. Cancelled events
     const cancelLogs = await getLogs({
       fromBlock: safeFrom,
-      toBlock: latestBlock,
+      toBlock:   latestBlock,
       event: "event Cancelled(uint256 indexed listingId)",
     });
 
@@ -237,7 +241,7 @@ export default async function handler(req, res) {
     // 5. PriceUpdated events
     const priceLogs = await getLogs({
       fromBlock: safeFrom,
-      toBlock: latestBlock,
+      toBlock:   latestBlock,
       event: "event PriceUpdated(uint256 indexed listingId, uint256 newPrice)",
     });
 
