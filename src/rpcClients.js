@@ -34,3 +34,17 @@ export function getWalletClient() {
     transport: custom(window.ethereum),
   });
 }
+
+// ─── The Missing Piece for useMarketplace ─────────────────────────────────────
+/** * Returns a grouped object of clients. 
+ * useMarketplace.ts calls this as: const clients = getClients(chainId)
+ */
+export function getClients(chainId) {
+  // We use the same publicClient for all categories since they all hit Tempo
+  return {
+    balance:    publicClient,
+    listings:   publicClient,
+    history:    publicClient,
+    collection: publicClient,
+  };
+}
