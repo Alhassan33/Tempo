@@ -9,10 +9,10 @@ import {
   phantomWallet,
 } from "@rainbow-me/rainbowkit/wallets";
 
-// ─── Tempo Testnet Chain Definition ───────────────────────────────────────────
-export const tempoTestnet = defineChain({
-  id: 42431,
-  name: "Tempo Testnet",
+// ─── Tempo Mainnet ────────────────────────────────────────────────────────────
+export const tempoMainnet = defineChain({
+  id: 4217,
+  name: "Tempo",
   nativeCurrency: {
     name: "USD",
     symbol: "USD",
@@ -20,23 +20,23 @@ export const tempoTestnet = defineChain({
   },
   rpcUrls: {
     default: {
-      http: ["https://rpc.moderato.tempo.xyz"],
+      http: ["https://rpc.tempo.xyz"],
+      webSocket: ["wss://rpc.tempo.xyz"],
     },
   },
   blockExplorers: {
     default: {
       name: "Tempo Explorer",
-      url: "https://explorer.moderato.tempo.xyz",
+      url: "https://explore.tempo.xyz",
     },
   },
-  testnet: true,
+  testnet: false,
 });
 
-// ─── WalletConnect Project ID ──────────────────────────────────────────────────
-// Get yours free at https://cloud.walletconnect.com
+// ─── WalletConnect Project ID ─────────────────────────────────────────────────
 const projectId = "c5c2a8702266143c000e3b6083984ee0";
 
-// ─── Wallet List ───────────────────────────────────────────────────────────────
+// ─── Wallet List ──────────────────────────────────────────────────────────────
 const connectors = connectorsForWallets(
   [
     {
@@ -57,11 +57,11 @@ const connectors = connectorsForWallets(
   }
 );
 
-// ─── Wagmi Config ──────────────────────────────────────────────────────────────
+// ─── Wagmi Config ─────────────────────────────────────────────────────────────
 export const config = createConfig({
-  chains: [tempoTestnet],
+  chains: [tempoMainnet],
   connectors,
   transports: {
-    [tempoTestnet.id]: http("https://rpc.moderato.tempo.xyz"),
+    [tempoMainnet.id]: http("https://rpc.tempo.xyz"),
   },
 });
