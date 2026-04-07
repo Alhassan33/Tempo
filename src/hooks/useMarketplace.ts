@@ -3,10 +3,10 @@ import {
   useAccount, useChainId, usePublicClient, useWalletClient,
   useWriteContract, useConnect, useDisconnect, useSwitchChain,
 } from 'wagmi'
-import { encodeFunctionData, parseUnits } from 'viem'
+import { parseUnits } from 'viem'
 import { injected } from 'wagmi/connectors'
 import { MARKETPLACE_ABI, ERC721_ABI, ERC20_ABI } from '../abi/marketplace.js'
-import { getNetwork, tempoMainnet } from '../wagmi.config.js'
+import { tempoMainnet } from '../wagmi.config.js'
 import { tempoModerato } from 'viem/chains'
 import { getClients } from '../rpcClients.js'
 
@@ -31,9 +31,26 @@ function invalidateListingsCache(chainId) {
 export function useMarketplace() {
   const { address: account, isConnected } = useAccount()
   const chainId       = useChainId()
-  const network       = getNetwork(chainId)
   const publicClient  = usePublicClient()
   const { data: walletClient } = useWalletClient()
+  
+  // ─── STABLE NETWORK CONFIGURATION ──────────────────────────────────────────
+  // Replaces the missing getNetwork export to fix Vercel build errors.
+  const network = useMemo(() => {
+    // Tempo Mainnet Configuration
+    if (chainId === 4217) {
+      return {
+        marketplace: "0x218AB916fe8d7A1Ca87d7cD5Dfb1d44684Ab926b",
+        paymentToken: "0x20c0000000000000000000000000000000000000",
+      }
+    }
+    // Default Fallback (using Mainnet addresses as primary)
+    return {
+      marketplace: "0x218AB916fe8d7A1Ca87d7cD5Dfb1d44684Ab926b",
+      paymentToken: "0x20c0000000000000000000000000000000000000",
+    }
+  }, [chainId])
+
   const clients = useMemo(() => getClients(chainId), [chainId])
   const { connect }     = useConnect()
   const { disconnect }  = useDisconnect()
@@ -85,7 +102,6 @@ export function useMarketplace() {
     } catch (err) { console.error('fetchBalance:', err) }
   }, [clients, account, network])
 
-  // Priority: localStorage (instant) → /api/listings KV cache (~40ms) → direct RPC → loop
   const fetchListings = useCallback(async () => {
     if (!network.marketplace) return
     const LS_KEY = `tempo_listings_${chainId}`
@@ -179,11 +195,11 @@ export function useMarketplace() {
     if (wrongNetwork)         { status('error', 'Switch to a Tempo network.'); return }
     if (!network.marketplace) { status('error', 'Marketplace not deployed on this network.'); return }
     const tempId = `optimistic_${Date.now()}`
-    const priceWei = parseUnits(String(price), 6).toString()
+    const priceWei = parseUnits(String(price), 18).toString() // pathUSD uses 18 decimals
     setListings(prev => [{ listingId: tempId, seller: account, nftAddress: nftContract, tokenId: String(tokenId), price: priceWei, active: true, _optimistic: true }, ...prev])
     try {
       setLoading(true); clearStatus()
-      const priceUnits = parseUnits(String(price), 6)
+      const priceUnits = parseUnits(String(price), 18)
       status('info', 'Step 1/2 — Approving NFT transfer…')
       const h1 = await writeContractAsync({ address: nftContract, abi: ERC721_ABI, functionName: 'approve', args: [network.marketplace, BigInt(tokenId)] })
       await publicClient.waitForTransactionReceipt({ hash: h1 })
@@ -243,13 +259,13 @@ export function useMarketplace() {
 
   const updatePrice = useCallback(async (listingId, newPrice) => {
     if (!account) { status('error', 'Wallet not connected.'); return }
-    const priceWei = parseUnits(String(newPrice), 6).toString()
+    const priceWei = parseUnits(String(newPrice), 18).toString()
     const prevListings = listings
     setListings(prev => prev.map(l => l.listingId === listingId ? { ...l, price: priceWei } : l))
     try {
       setLoading(true); clearStatus()
       status('info', `Updating price for listing #${listingId}…`)
-      const priceUnits = parseUnits(String(newPrice), 6)
+      const priceUnits = parseUnits(String(newPrice), 18)
       const h = await writeContractAsync({ address: network.marketplace, abi: MARKETPLACE_ABI, functionName: 'updatePrice', args: [BigInt(listingId), priceUnits] })
       await publicClient.waitForTransactionReceipt({ hash: h })
       status('success', `Price updated to $${newPrice}!`)
@@ -286,7 +302,7 @@ export function useMarketplace() {
       )
       saveOwned(ids); return ids
     } catch {}
-    // Fallback: Transfer log scan (capped range)
+    // Fallback: Transfer log scan
     try {
       const transferEvent = { name: 'Transfer', type: 'event', inputs: [{ name: 'from', type: 'address', indexed: true }, { name: 'to', type: 'address', indexed: true }, { name: 'tokenId', type: 'uint256', indexed: true }] }
       const latestBlock = await client.getBlockNumber()
@@ -308,24 +324,6 @@ export function useMarketplace() {
       const owned = [...receivedIds].filter(id => !sentIds.has(id))
       if (owned.length > 0) { saveOwned(owned); return owned }
     } catch {}
-    // Last resort: parallel ownerOf scan
-    try {
-      const supply = await client.readContract({ address: nftAddress, abi: ERC721_ABI, functionName: 'totalSupply' }).catch(() => client.readContract({ address: nftAddress, abi: ERC721_ABI, functionName: 'nextTokenId' }))
-      const total = Number(supply)
-      const tokens = []
-      const BATCH = 20
-      for (let start = 0; start < total; start += BATCH) {
-        const end = Math.min(start + BATCH, total)
-        const batch = await Promise.all(Array.from({ length: end - start }, (_, i) =>
-          client.readContract({ address: nftAddress, abi: ERC721_ABI, functionName: 'ownerOf', args: [BigInt(start + i)] })
-            .then(owner => owner.toLowerCase() === account.toLowerCase() ? String(start + i) : null)
-            .catch(() => null)
-        ))
-        tokens.push(...batch.filter(Boolean))
-        if (end < total) await new Promise(r => setTimeout(r, 100))
-      }
-      saveOwned(tokens); return tokens
-    } catch {}
     return []
   }, [clients, account, chainId])
 
@@ -333,17 +331,15 @@ export function useMarketplace() {
     if (!isConnected || !wrongNetwork) return
     const t = setTimeout(() => { switchChain({ chainId: tempoMainnet.id }) }, 800)
     return () => clearTimeout(t)
-  }, [isConnected, wrongNetwork])
+  }, [isConnected, wrongNetwork, switchChain])
 
   useEffect(() => {
-  if (!publicClient) return
-  if (isConnected && wrongNetwork) return
-    // Debounce — rapid wallet events (connect, chain switch) can fire this
-    // multiple times in quick succession. 300ms delay collapses them into one.
+    if (!publicClient) return
+    if (isConnected && wrongNetwork) return
     const t1 = setTimeout(() => fetchListings(), 300)
     const t2 = setTimeout(() => { if (isConnected) fetchBalance() }, 800)
     return () => { clearTimeout(t1); clearTimeout(t2) }
-  }, [publicClient, chainId, account, isConnected])
+  }, [publicClient, chainId, account, isConnected, fetchListings, fetchBalance, wrongNetwork])
 
   return {
     account, isConnected, chainId, wrongNetwork, network,
