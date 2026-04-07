@@ -151,7 +151,7 @@ function AdminPanel() {
                       </a>
                     )}
                     {p.contract_address && (
-                      <a href={`https://explorer.moderato.tempo.xyz/address/${p.contract_address}`} target="_blank" rel="noreferrer"
+                      <a href={`https://explore.tempo.xyz/address/${p.contract_address}`} target="_blank" rel="noreferrer"
                         className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg"
                         style={{ background: "#161d28", color: "#9da7b3", border: "1px solid rgba(255,255,255,0.06)", textDecoration: "none" }}>
                         <ExternalLink size={10} /> Explorer
