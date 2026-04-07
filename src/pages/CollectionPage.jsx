@@ -1,9 +1,16 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { CheckCircle2, Grid, List, ExternalLink, Twitter, Globe } from "lucide-react";
+import { 
+  CheckCircle2, 
+  Grid, 
+  List, 
+  ExternalLink, 
+  Twitter, 
+  Globe, 
+  MessageCircle 
+} from "lucide-react";
 import { useAccount } from "wagmi";
 import { useCollection, useRealtimeListings } from "@/hooks/useSupabase";
-// ✅ Fixed: Unified hook import
 import { useMarketplace } from "@/hooks/useMarketplace"; 
 import NFTImage from "@/components/NFTImage.jsx";
 import ActivityFeed from "@/components/ActivityFeed.jsx";
@@ -14,10 +21,10 @@ import ListModal from "@/components/ListModal.jsx";
 import { extractImageUrl } from "@/utils/nftImageUtils.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const TABS       = ["Items", "Activity", "Bids", "Analytics"];
-const IPFS_BASE  = "https://gateway.lighthouse.storage/ipfs/bafybeiaksg5cena4ucpfjyqghnox73cflc6c4du2g3sn4qtovgzl67inpu/";
-const NFT_CONTRACT  = "0x1Ee82CC5946EdBD88eaf90D6d3c2B5baA4f9966C";
-const TOTAL_SUPPLY  = 2000;
+const TABS = ["Items", "Activity", "Bids", "Analytics"];
+const IPFS_BASE = "https://gateway.lighthouse.storage/ipfs/bafybeiaksg5cena4ucpfjyqghnox73cflc6c4du2g3sn4qtovgzl67inpu/";
+const NFT_CONTRACT = "0x1Ee82CC5946EdBD88eaf90D6d3c2B5baA4f9966C";
+const TOTAL_SUPPLY = 2000;
 const EXPLORER_BASE = "https://explore.tempo.xyz";
 
 async function fetchTokenMetadata(tokenId) {
@@ -28,15 +35,15 @@ async function fetchTokenMetadata(tokenId) {
     const json = await res.json();
     return {
       tokenId,
-      name:       json.name        || `TEMPONYAW #${tokenId}`,
-      image:      extractImageUrl(json) || `${IPFS_BASE}${tokenId}.png`,
-      attributes: json.attributes  || [],
+      name: json.name || `TEMPONYAW #${tokenId}`,
+      image: extractImageUrl(json) || `${IPFS_BASE}${tokenId}.png`,
+      attributes: json.attributes || [],
     };
   } catch {
     return {
       tokenId,
-      name:       `TEMPONYAW #${tokenId}`,
-      image:      `${IPFS_BASE}${tokenId}.png`,
+      name: `TEMPONYAW #${tokenId}`,
+      image: `${IPFS_BASE}${tokenId}.png`,
       attributes: [],
     };
   }
@@ -111,7 +118,6 @@ function NFTCard({ token, listing, onBuy, onList, isOwner, view, onClick }) {
 
 // ─── Buy Modal ────────────────────────────────────────────────────────────────
 function BuyModal({ listing, token, onClose }) {
-  // ✅ Fixed: Using unified hook functions
   const { buyNFT, loading, txStatus } = useMarketplace();
 
   async function handleBuy() {
@@ -158,32 +164,28 @@ function BuyModal({ listing, token, onClose }) {
 
 // ─── Main CollectionPage ──────────────────────────────────────────────────────
 export default function CollectionPage() {
-  const { id }       = useParams();
-  const navigate     = useNavigate();
-  const { address }  = useAccount();
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { address } = useAccount();
 
-  // Supabase Data
-  const { collection } = useCollection(id);
-  const { listings: supabaseListings }   = useRealtimeListings(collection?.contract_address || NFT_CONTRACT);
+  const { collection, loading: colLoading } = useCollection(id);
+  const { listings: supabaseListings } = useRealtimeListings(collection?.contract_address || NFT_CONTRACT);
   
-  // ✅ Fixed: Destructure what we need from the unified hook
-  const { network } = useMarketplace();
-
-  const [tokens, setTokens]             = useState([]);
+  const [tokens, setTokens] = useState([]);
   const [tokensLoading, setTokensLoading] = useState(true);
-  const [page, setPage]                 = useState(1);
+  const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
 
-  const [tab, setTab]           = useState("Items");
-  const [view, setView]         = useState("grid");
+  const [tab, setTab] = useState("Items");
+  const [view, setView] = useState("grid");
   const [buyTarget, setBuyTarget] = useState(null);
   const [listModal, setListModal] = useState(null);
 
   useEffect(() => {
     setTokensLoading(true);
     const start = (page - 1) * PAGE_SIZE + 1;
-    const end   = Math.min(start + PAGE_SIZE - 1, TOTAL_SUPPLY);
-    const ids   = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+    const end = Math.min(start + PAGE_SIZE - 1, TOTAL_SUPPLY);
+    const ids = Array.from({ length: end - start + 1 }, (_, i) => start + i);
 
     Promise.all(ids.map(fetchTokenMetadata)).then((results) => {
       setTokens(results);
@@ -196,72 +198,114 @@ export default function CollectionPage() {
     return acc;
   }, {});
 
+  // ✅ Fallback and Data Source Mapping
   const col = collection || {
-    name: "TEMPONYAW", verified: true,
-    logo_url: `${IPFS_BASE}1.png`, banner_url: null,
-    floor_price: 0, volume_total: 0, total_sales: 0,
+    name: "TEMPONYAW", 
+    verified: true,
+    logo_url: `https://snnezzwrfxhawzcakfqc.supabase.co/storage/v1/object/public/collection_assets/Temponyaw/Nyaw-logo.jpg`, 
+    banner_url: `https://snnezzwrfxhawzcakfqc.supabase.co/storage/v1/object/public/collection_assets/Temponyaw/Nyaw-banner.jpg`,
+    floor_price: 0, 
+    volume_total: 0, 
+    total_sales: 0,
     total_supply: TOTAL_SUPPLY,
     description: "The official TEMPONYAW NFT collection on Tempo Chain.",
     contract_address: NFT_CONTRACT,
+    twitter: "https://x.com/Temponyan",
+    discord: "https://discord.gg/RR8kw4EqNF",
+    website: "https://temponyaw.xyz"
   };
-
-  const totalPages = Math.ceil(TOTAL_SUPPLY / PAGE_SIZE);
 
   return (
     <div className="fade-up min-h-screen">
       {/* Banner */}
-      <div className="relative h-44 w-full overflow-hidden bg-slate-900">
+      <div className="relative h-64 w-full overflow-hidden bg-slate-900">
         {col.banner_url && <img src={col.banner_url} alt="" className="w-full h-full object-cover" />}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0b0f14] to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0b0f14] via-transparent to-transparent" />
       </div>
 
-      <div className="px-6 max-w-6xl mx-auto">
-        {/* Profile Header section same as before */}
-        <div className="flex items-end gap-5 -mt-10 mb-6 relative z-10 flex-wrap">
-          <div className="w-20 h-20 rounded-2xl flex-shrink-0 overflow-hidden border-4 border-[#0b0f14] bg-[#161d28]">
+      <div className="px-6 max-w-7xl mx-auto">
+        {/* Profile Header section - OpenSea/Magic Eden Style */}
+        <div className="flex items-end gap-6 -mt-16 mb-8 relative z-10 flex-wrap">
+          <div className="w-32 h-32 rounded-3xl flex-shrink-0 overflow-hidden border-8 border-[#0b0f14] bg-[#161d28] shadow-2xl">
             <NFTImage src={col.logo_url} alt={col.name} className="w-full h-full object-cover" />
           </div>
-          <div className="pb-1 flex-1 min-w-0">
-             <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-2xl font-extrabold text-white">{col.name}</h1>
-                {col.verified && <CheckCircle2 size={16} className="text-cyan-400" />}
+          
+          <div className="pb-2 flex-1 min-w-0">
+             <div className="flex items-center gap-2 mb-2">
+                <h1 className="text-4xl font-black text-white uppercase tracking-tight">{col.name}</h1>
+                {col.verified && <CheckCircle2 size={24} className="fill-cyan-400 text-[#0b0f14]" />}
              </div>
-             <p className="text-sm text-gray-400">{col.total_supply?.toLocaleString()} items</p>
-          </div>
-          <div className="flex items-center gap-2 pb-1">
-             <a href={`${EXPLORER_BASE}/address/${col.contract_address}`} target="_blank" rel="noreferrer" className="w-8 h-8 rounded-lg bg-[#161d28] border border-white/5 flex items-center justify-center text-gray-400 hover:text-white">
-                <ExternalLink size={13} />
-             </a>
+             
+             {/* Social Bar */}
+             <div className="flex items-center gap-5">
+                <p className="text-gray-400 font-medium">{col.total_supply?.toLocaleString()} items</p>
+                <div className="h-4 w-[1px] bg-white/10" />
+                <div className="flex items-center gap-4 text-gray-400">
+                   {col.website && (
+                      <a href={col.website} target="_blank" rel="noreferrer" className="hover:text-white transition-colors">
+                         <Globe size={20} />
+                      </a>
+                   )}
+                   {col.twitter && (
+                      <a href={col.twitter} target="_blank" rel="noreferrer" className="hover:text-white transition-colors">
+                         <Twitter size={20} />
+                      </a>
+                   )}
+                   {col.discord && (
+                      <a href={col.discord} target="_blank" rel="noreferrer" className="hover:text-white transition-colors">
+                         <MessageCircle size={20} />
+                      </a>
+                   )}
+                   <a href={`${EXPLORER_BASE}/address/${col.contract_address}`} target="_blank" rel="noreferrer" className="hover:text-white transition-colors">
+                      <ExternalLink size={20} />
+                   </a>
+                </div>
+             </div>
           </div>
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-            <div className="rounded-xl p-3 bg-[#121821] border border-white/5">
-                <div className="text-[10px] font-semibold text-gray-500 uppercase">Floor Price</div>
-                <div className="font-mono text-sm font-bold text-white">{col.floor_price ? `${col.floor_price} USD` : "—"}</div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+            <div className="rounded-2xl p-4 bg-[#121821] border border-white/5 shadow-sm">
+                <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Floor Price</div>
+                <div className="font-mono text-xl font-black text-white">{col.floor_price > 0 ? `${col.floor_price} USD` : "—"}</div>
             </div>
-            {/* ... other stats */}
+            <div className="rounded-2xl p-4 bg-[#121821] border border-white/5 shadow-sm">
+                <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Volume</div>
+                <div className="font-mono text-xl font-black text-white">{col.volume_total || 0} USD</div>
+            </div>
+            <div className="rounded-2xl p-4 bg-[#121821] border border-white/5 shadow-sm">
+                <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Owners</div>
+                <div className="font-mono text-xl font-black text-white">{col.owners || 0}</div>
+            </div>
+            <div className="rounded-2xl p-4 bg-[#121821] border border-white/5 shadow-sm">
+                <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Items</div>
+                <div className="font-mono text-xl font-black text-white">{col.total_supply?.toLocaleString()}</div>
+            </div>
         </div>
 
-        {/* Tabs & Content Logic */}
-        <div className="flex items-center gap-2 mb-6 border-b border-white/5">
+        {/* Tabs */}
+        <div className="flex items-center gap-8 mb-8 border-b border-white/5">
             {TABS.map(t => (
-                <button key={t} onClick={() => setTab(t)} className={`h-10 px-4 text-sm font-semibold border-b-2 transition-all ${tab === t ? 'text-cyan-400 border-cyan-400' : 'text-gray-500 border-transparent hover:text-gray-300'}`}>
+                <button key={t} onClick={() => setTab(t)} 
+                  className={`h-12 px-2 text-sm font-bold border-b-2 transition-all relative ${
+                    tab === t ? 'text-cyan-400 border-cyan-400' : 'text-gray-500 border-transparent hover:text-gray-300'
+                  }`}>
                     {t}
                 </button>
             ))}
         </div>
 
-        <div className="pb-12">
+        {/* Main Content */}
+        <div className="pb-20">
           {tab === "Items" && (
             <>
               {tokensLoading ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {Array.from({ length: 8 }).map((_, i) => <CardSkeleton key={i} />)}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                  {Array.from({ length: 10 }).map((_, i) => <CardSkeleton key={i} />)}
                 </div>
               ) : (
-                <div className={view === "grid" ? "grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4" : "flex flex-col gap-2"}>
+                <div className={view === "grid" ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6" : "flex flex-col gap-3"}>
                   {tokens.map((token) => (
                     <NFTCard
                       key={token.tokenId}
@@ -279,9 +323,12 @@ export default function CollectionPage() {
             </>
           )}
           {tab === "Activity" && <ActivityFeed collectionId={id} />}
+          {tab === "Bids" && <CollectionBids collectionId={id} />}
+          {tab === "Analytics" && <PriceChart collectionId={id} />}
         </div>
       </div>
 
+      {/* Modals */}
       {buyTarget && (
         <BuyModal 
           listing={buyTarget.listing} 
@@ -293,3 +340,4 @@ export default function CollectionPage() {
     </div>
   );
 }
+
