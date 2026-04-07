@@ -1,17 +1,36 @@
-import { createPublicClient, createWalletClient, http, custom } from "viem";
-import { mainnet } from "viem/chains";
+import { createPublicClient, createWalletClient, http, custom, defineChain } from "viem";
 
-/** Read-only public client */
-export const publicClient = createPublicClient({
-  chain: mainnet,
-  transport: http(),
+// ─── Tempo Mainnet ────────────────────────────────────────────────────────────
+export const tempoMainnet = defineChain({
+  id: 4217,
+  name: "Tempo",
+  nativeCurrency: { name: "USD", symbol: "USD", decimals: 18 },
+  rpcUrls: {
+    default: {
+      http:      ["https://rpc.tempo.xyz"],
+      webSocket: ["wss://rpc.tempo.xyz"],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: "Tempo Explorer",
+      url:  "https://explore.tempo.xyz",
+    },
+  },
+  testnet: false,
 });
 
-/** Wallet client (browser wallet) */
+/** Read-only public client — use for all contract reads */
+export const publicClient = createPublicClient({
+  chain:     tempoMainnet,
+  transport: http("https://rpc.tempo.xyz"),
+});
+
+/** Wallet client (browser wallet) — use for writes/transactions */
 export function getWalletClient() {
   if (typeof window === "undefined" || !window.ethereum) return null;
   return createWalletClient({
-    chain: mainnet,
+    chain:     tempoMainnet,
     transport: custom(window.ethereum),
   });
 }
