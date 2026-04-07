@@ -1,8 +1,7 @@
-Import { useState, useEffect } from "react";
+import { useState, useEffect } from "react"; // ✅ lowercase import (was capital I)
 import { useNavigate } from "react-router-dom";
 import { useCollections, useFeaturedProjects } from "../hooks/useSupabase";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmtTime(secs) {
   const h = String(Math.floor(secs / 3600)).padStart(2, "0");
   const m = String(Math.floor((secs % 3600) / 60)).padStart(2, "0");
@@ -18,7 +17,6 @@ const GRAD_KEYS = [
   "from-[#1a1a0e] to-[#101005]",
 ];
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
 function CollectionImg({ logoUrl, name, className = "" }) {
   if (logoUrl) {
     return (
@@ -46,10 +44,8 @@ function Stat({ label, value, small }) {
 
 function SkeletonCard({ large }) {
   return (
-    <div
-      className={`rounded-2xl overflow-hidden animate-pulse ${large ? "col-span-2 row-span-2" : ""}`}
-      style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}
-    >
+    <div className={`rounded-2xl overflow-hidden animate-pulse ${large ? "col-span-2 row-span-2" : ""}`}
+      style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}>
       <div className={`w-full ${large ? "h-72" : "h-36"}`} style={{ background: "#161d28" }} />
       <div className="p-4 space-y-2">
         <div className="h-3 rounded w-2/3" style={{ background: "#161d28" }} />
@@ -59,7 +55,6 @@ function SkeletonCard({ large }) {
   );
 }
 
-// ─── Countdown hook ───────────────────────────────────────────────────────────
 function useCountdown(isoTime) {
   const [secs, setSecs] = useState(() =>
     Math.max(0, Math.floor((new Date(isoTime) - Date.now()) / 1000))
@@ -76,22 +71,13 @@ function MintCard({ project, navigate }) {
   const isLive = project.status === "live";
 
   return (
-    <div
-      className="flex-shrink-0 w-48 rounded-2xl overflow-hidden cursor-pointer card-hover"
+    <div className="flex-shrink-0 w-48 rounded-2xl overflow-hidden cursor-pointer card-hover"
       style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}
-      onClick={() => navigate("/launchpad")}
-    >
+      onClick={() => navigate("/launchpad")}>
       <div className="relative">
-        <CollectionImg
-          logoUrl={project.banner_url || project.logo_url}
-          name={project.name}
-          className="h-28 w-full"
-        />
-        <span
-          className="absolute top-2 right-2 flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded"
-          style={{ background: isLive ? "#EF4444" : "#22d3ee", color: isLive ? "white" : "#0b0f14" }}
-        >
-          {isLive && <span className="live-dot" style={{ color: "white" }} />}
+        <CollectionImg logoUrl={project.banner_url || project.logo_url} name={project.name} className="h-28 w-full" />
+        <span className="absolute top-2 right-2 flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded"
+          style={{ background: isLive ? "#EF4444" : "#22d3ee", color: isLive ? "white" : "#0b0f14" }}>
           {isLive ? "LIVE" : "SOON"}
         </span>
       </div>
@@ -106,19 +92,15 @@ function MintCard({ project, navigate }) {
           </div>
           <div>
             <div className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: "#9da7b3" }}>Supply</div>
-            <div className="font-mono text-xs" style={{ color: "#e6edf3" }}>
-              {project.max_supply?.toLocaleString() || "—"}
-            </div>
+            <div className="font-mono text-xs" style={{ color: "#e6edf3" }}>{project.max_supply?.toLocaleString() || "—"}</div>
           </div>
         </div>
         <div className="font-mono text-xs text-center mb-2" style={{ color: "#22d3ee" }}>
           {isLive ? "Minting now" : countdown}
         </div>
-        <button
-          className="w-full h-7 rounded-lg text-xs font-bold transition-colors"
+        <button className="w-full h-7 rounded-lg text-xs font-bold transition-colors"
           style={{ background: "#22d3ee", color: "#0b0f14", border: "none", cursor: "pointer", fontFamily: "Syne, sans-serif" }}
-          onClick={(e) => { e.stopPropagation(); navigate("/launchpad"); }}
-        >
+          onClick={(e) => { e.stopPropagation(); navigate("/launchpad"); }}>
           {isLive ? "Mint" : "View"}
         </button>
       </div>
@@ -126,13 +108,9 @@ function MintCard({ project, navigate }) {
   );
 }
 
-// ─── Featured Collections ─────────────────────────────────────────────────────
 function FeaturedCollections({ navigate }) {
   const [tab, setTab] = useState("trending");
-  const { collections, isLoading } = useCollections(
-    tab === "trending" ? "volume_total" : "volume_24h"
-  );
-
+  const { collections, isLoading } = useCollections(tab === "trending" ? "volume_total" : "volume_24h");
   const featured = collections.slice(0, 5);
   const [hero, ...rest] = featured;
 
@@ -142,7 +120,7 @@ function FeaturedCollections({ navigate }) {
         <div className="h-5 w-48 rounded animate-pulse mb-5" style={{ background: "#161d28" }} />
         <div className="grid grid-cols-4 gap-4">
           <SkeletonCard large />
-          {[1, 2, 3, 4].map((i) => <SkeletonCard key={i} />)}
+          {[1,2,3,4].map((i) => <SkeletonCard key={i} />)}
         </div>
       </section>
     );
@@ -169,11 +147,7 @@ function FeaturedCollections({ navigate }) {
           {["trending", "movers"].map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className="px-4 py-1.5 text-xs font-semibold transition-colors"
-              style={{
-                color: tab === t ? "#22d3ee" : "#9da7b3",
-                background: tab === t ? "rgba(34,211,238,0.08)" : "transparent",
-                border: "none", cursor: "pointer", fontFamily: "Syne, sans-serif",
-              }}>
+              style={{ color: tab === t ? "#22d3ee" : "#9da7b3", background: tab === t ? "rgba(34,211,238,0.08)" : "transparent", border: "none", cursor: "pointer", fontFamily: "Syne, sans-serif" }}>
               {t === "trending" ? "Trending" : "Top Movers"}
             </button>
           ))}
@@ -181,12 +155,10 @@ function FeaturedCollections({ navigate }) {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        {/* Hero */}
-        <div
-          className="col-span-2 row-span-2 rounded-2xl overflow-hidden cursor-pointer card-hover"
+        {/* ✅ Use slug for navigation */}
+        <div className="col-span-2 row-span-2 rounded-2xl overflow-hidden cursor-pointer card-hover"
           style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}
-          onClick={() => navigate(`/collection/${hero.slug}`)}
-        >
+          onClick={() => navigate(`/collection/${hero.slug}`)}>
           <CollectionImg logoUrl={hero.banner_url} name={hero.name} className="h-72 w-full" />
           <div className="p-4">
             {hero.verified && (
@@ -197,17 +169,16 @@ function FeaturedCollections({ navigate }) {
             )}
             <div className="font-bold text-lg mb-3" style={{ color: "#e6edf3" }}>{hero.name}</div>
             <div className="flex gap-5">
-              <Stat label="Floor" value={hero.floor_price ? `${hero.floor_price.toFixed(2)} USD` : "—"} />
-              <Stat label="Volume" value={hero.volume_total ? hero.volume_total.toLocaleString() : "—"} />
-              <Stat label="Sales" value={hero.total_sales || "—"} />
+              <Stat label="Floor"  value={hero.floor_price  ? `${hero.floor_price.toFixed(2)} USD`  : "—"} />
+              <Stat label="Volume" value={hero.volume_total ? `${hero.volume_total.toLocaleString()} USD` : "—"} />
+              <Stat label="Sales"  value={hero.total_sales  || "—"} />
             </div>
           </div>
         </div>
 
-        {/* Small cards */}
+        {/* ✅ Use slug for navigation */}
         {rest.map((c, i) => (
-          <div key={c.id}
-            className="rounded-2xl overflow-hidden cursor-pointer card-hover"
+          <div key={c.id} className="rounded-2xl overflow-hidden cursor-pointer card-hover"
             style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}
             onClick={() => navigate(`/collection/${c.slug}`)}>
             <div className="relative">
@@ -220,7 +191,8 @@ function FeaturedCollections({ navigate }) {
             <div className="p-3">
               <div className="font-bold text-sm mb-2 truncate" style={{ color: "#e6edf3" }}>{c.name}</div>
               <div className="flex gap-4">
-                <Stat label="Floor" value={c.floor_price ? `${c.floor_price.toFixed(2)}` : "—"} small />
+                {/* ✅ USD not ETH */}
+                <Stat label="Floor" value={c.floor_price ? `${c.floor_price.toFixed(2)} USD` : "—"} small />
                 <Stat label="Sales" value={c.total_sales || "—"} small />
               </div>
             </div>
@@ -231,7 +203,6 @@ function FeaturedCollections({ navigate }) {
   );
 }
 
-// ─── Live Mints Strip ─────────────────────────────────────────────────────────
 function LiveMints({ navigate }) {
   const { projects, isLoading } = useFeaturedProjects();
 
@@ -239,9 +210,7 @@ function LiveMints({ navigate }) {
     <section className="px-6 pb-6">
       <div className="h-5 w-32 rounded animate-pulse mb-4" style={{ background: "#161d28" }} />
       <div className="flex gap-3">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="flex-shrink-0 w-48 h-64 rounded-2xl animate-pulse" style={{ background: "#121821" }} />
-        ))}
+        {[1,2,3].map((i) => <div key={i} className="flex-shrink-0 w-48 h-64 rounded-2xl animate-pulse" style={{ background: "#121821" }} />)}
       </div>
     </section>
   );
@@ -264,7 +233,6 @@ function LiveMints({ navigate }) {
   );
 }
 
-// ─── Collections Table ────────────────────────────────────────────────────────
 function CollectionsTable({ navigate }) {
   const [sortKey, setSortKey] = useState("volume_total");
   const [sortDir, setSortDir] = useState("desc");
@@ -336,6 +304,7 @@ function CollectionsTable({ navigate }) {
                   style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(34,211,238,0.04)")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  // ✅ Use slug
                   onClick={() => navigate(`/collection/${c.slug}`)}>
                   <td className="px-4 py-3">
                     <span className="font-mono text-xs" style={{ color: "#9da7b3" }}>{i + 1}</span>
@@ -350,15 +319,13 @@ function CollectionsTable({ navigate }) {
                       </div>
                       <div>
                         <div className="text-sm font-semibold flex items-center gap-1" style={{ color: "#e6edf3" }}>
-                          {c.name}
-                          {c.verified && <span style={{ color: "#22d3ee" }}>✓</span>}
+                          {c.name}{c.verified && <span style={{ color: "#22d3ee" }}>✓</span>}
                         </div>
-                        <div className="text-xs" style={{ color: "#9da7b3" }}>
-                          {c.total_supply?.toLocaleString() || "—"} items
-                        </div>
+                        <div className="text-xs" style={{ color: "#9da7b3" }}>{c.total_supply?.toLocaleString() || "—"} items</div>
                       </div>
                     </div>
                   </td>
+                  {/* ✅ USD labels */}
                   <td className="px-4 py-3 text-right font-mono text-sm" style={{ color: "#e6edf3" }}>
                     {c.floor_price ? `${c.floor_price.toFixed(2)} USD` : "—"}
                   </td>
@@ -381,7 +348,6 @@ function CollectionsTable({ navigate }) {
   );
 }
 
-// ─── Market Page ──────────────────────────────────────────────────────────────
 export default function Market() {
   const navigate = useNavigate();
   return (
