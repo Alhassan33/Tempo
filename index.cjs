@@ -15,9 +15,9 @@ const NFT_ABI = [
 ];
 
 const market = new ethers.Contract(process.env.MARKET_ADDRESS, MARKET_ABI, provider);
-const nftContract = new ethers.Contract(process.env.LAUNCHPAD_ADDRESS, NFT_ABI, provider);
 
 async function updateCollectionStats(nftAddress) {
+  // Get live Floor Price
   const { data: floorData } = await supabase
     .from('listings')
     .select('price')
@@ -28,6 +28,7 @@ async function updateCollectionStats(nftAddress) {
 
   const floor = floorData?.[0]?.price || 0;
 
+  // Calculate Unique Owners
   const { data: ownerData } = await supabase
     .from('nfts')
     .select('owner_address')
@@ -35,12 +36,12 @@ async function updateCollectionStats(nftAddress) {
   
   const uniqueOwners = new Set(ownerData?.map(o => o.owner_address)).size;
 
+  // Update Supabase (Market Cap updates automatically via SQL)
   await supabase
     .from('collections')
     .update({ 
       floor_price: floor, 
-      owners: uniqueOwners,
-      total_supply: 2000 
+      owners: uniqueOwners
     })
     .eq('contract_address', nftAddress.toLowerCase());
 }
@@ -48,19 +49,28 @@ async function updateCollectionStats(nftAddress) {
 async function syncEvents() {
   try {
     const currentBlock = await provider.getBlockNumber();
-    const fromBlock = currentBlock - 10;
+    const fromBlock = currentBlock - 15; // Slightly wider window for safety
 
-    const transfers = await nftContract.queryFilter("Transfer", fromBlock, currentBlock);
-    for (const log of transfers) {
-      const { to, tokenId } = log.args;
-      await supabase.from('nfts').upsert({
-        contract_address: process.env.LAUNCHPAD_ADDRESS.toLowerCase(),
-        token_id: tokenId.toString(),
-        owner_address: to.toLowerCase()
-      });
-      await updateCollectionStats(process.env.LAUNCHPAD_ADDRESS);
+    // 1. Fetch all collection addresses we are tracking from Supabase
+    const { data: allCollections } = await supabase.from('collections').select('contract_address');
+    
+    for (const col of allCollections) {
+      const addr = col.contract_address.toLowerCase();
+      const nftContract = new ethers.Contract(addr, NFT_ABI, provider);
+
+      // Watch Transfers for this specific collection
+      const transfers = await nftContract.queryFilter("Transfer", fromBlock, currentBlock);
+      for (const log of transfers) {
+        await supabase.from('nfts').upsert({
+          contract_address: addr,
+          token_id: log.args.tokenId.toString(),
+          owner_address: log.args.to.toLowerCase()
+        });
+        await updateCollectionStats(addr);
+      }
     }
 
+    // 2. Watch Marketplace Listings (Works for all collections automatically)
     const listings = await market.queryFilter("ItemListed", fromBlock, currentBlock);
     for (const log of listings) {
       const { nftAddress, tokenId, price } = log.args;
@@ -70,12 +80,12 @@ async function syncEvents() {
         price: ethers.formatEther(price),
         status: 'active'
       });
-      await updateCollectionStats(nftAddress);
+      await updateCollectionStats(nftAddress.toLowerCase());
     }
   } catch (err) {
     console.error("Sync Error:", err.message);
   }
 }
 
-console.log("🚀 Marketplace Indexer Active...");
+console.log("🚀 Multi-Collection Indexer Active for Temponyan & Others...");
 setInterval(syncEvents, 10000);
