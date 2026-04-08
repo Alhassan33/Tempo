@@ -9,88 +9,40 @@ import ListModal from "@/components/ListModal.jsx";
 import NFTImage from "@/components/NFTImage.jsx";
 
 // ─── Minimal ERC-20 ABI for reading ownership ────────────────────────────────
-  async function fetchPortfolio() {
-    if (!address || !publicClient) return;
+    async function fetchPortfolio() {
+    if (!address) return;
     setLoading(true);
     setError(null);
 
     try {
-      // 1. Get all approved collections from your Supabase setup
-      const { data: collections, error: dbErr } = await supabase
-        .from("collections")
-        .select("contract_address, name, slug, metadata_base_uri");
+      // Direct query to our new ownership table
+      const { data, error: dbErr } = await supabase
+        .from("nfts")
+        .select(`
+          token_id, 
+          contract_address, 
+          collections (
+            name, 
+            slug, 
+            metadata_base_uri
+          )
+        `)
+        .eq("owner_address", address.toLowerCase());
 
       if (dbErr) throw dbErr;
-      if (!collections?.length) { setOwnedNFTs([]); return; }
 
-      const assets = [];
-
-      // 2. Process each collection individually to prevent total failure
-      await Promise.all(
-        collections.map(async (col) => {
-          if (!col.contract_address) return;
-          try {
-            const balance = await publicClient.readContract({
-              address: col.contract_address,
-              abi: ERC721_ABI,
-              functionName: "balanceOf",
-              args: [address],
-            });
-
-            const count = Number(balance);
-            if (count === 0) return;
-
-            // TRY PATH A: Enumerable (will fail on many modern contracts)
-            try {
-              const tokenIds = await Promise.all(
-                Array.from({ length: count }, (_, i) =>
-                  publicClient.readContract({
-                    address: col.contract_address,
-                    abi: ERC721_ABI,
-                    functionName: "tokenOfOwnerByIndex",
-                    args: [address, BigInt(i)],
-                  })
-                )
-              );
-
-              tokenIds.forEach((id) => {
-                assets.push({
-                  token_id: Number(id),
-                  contract_address: col.contract_address,
-                  collection_name: col.name,
-                  collection_slug: col.slug,
-                  metadata_base_uri: col.metadata_base_uri,
-                });
-              });
-            } catch (enumerableErr) {
-              // TRY PATH B: Fallback to Supabase tracking
-              // Ensure you use .toLowerCase() for reliable DB matching
-              const { data: manualAssets } = await supabase
-                .from("sales") 
-                .select("token_id")
-                .eq("nft_contract", col.contract_address.toLowerCase())
-                .eq("buyer", address.toLowerCase());
-
-              if (manualAssets?.length) {
-                manualAssets.forEach(item => {
-                  assets.push({
-                    token_id: item.token_id,
-                    contract_address: col.contract_address,
-                    collection_name: col.name,
-                    collection_slug: col.slug,
-                    metadata_base_uri: col.metadata_base_uri,
-                  });
-                });
-              }
-            }
-          } catch (e) {
-            console.error(`Skipping collection ${col.name}: Not found or error.`);
-          }
-        })
-      );
+      // Map the data to match your component's expected format
+      const assets = data.map(item => ({
+        token_id: item.token_id,
+        contract_address: item.contract_address,
+        collection_name: item.collections?.name || "Unknown",
+        collection_slug: item.collections?.slug,
+        metadata_base_uri: item.collections?.metadata_base_uri
+      }));
 
       setOwnedNFTs(assets);
     } catch (e) {
+      console.error("Portfolio fetch error:", e);
       setError(e.message);
     } finally {
       setLoading(false);
