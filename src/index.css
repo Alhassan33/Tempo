@@ -3,24 +3,115 @@
 @tailwind utilities;
 
 @layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
+    /* HELVETICA NEUE: The professional standard we're switching to */
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    background-color: #03080f; /* Deep "OpenSea" black */
-    color: #ffffff;
+    /* Deep "OpenSea" black for high-end contrast */
+    background-color: #03080f; 
+    color: #e6edf3;
+    min-height: 100vh;
+    overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* Your Brand-specific Cyan Grid - kept at 32px for density */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image: 
+      linear-gradient(rgba(34, 211, 238, 0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34, 211, 238, 0.02) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  ::-webkit-scrollbar {
+    width: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #03080f;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(34, 211, 238, 0.1);
+    border-radius: 3px;
   }
 }
 
 @layer utilities {
-  /* Brand color for specific highlights */
+  /* BRAND TYPOGRAPHY */
+  .font-display {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+  }
+
+  /* Technical Mono ONLY for IDs and small stats */
+  .font-mono-web3 {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: -0.02em;
+  }
+
+  /* BRAND COLORS */
   .text-brand { color: #22d3ee; }
   .bg-brand { background-color: #22d3ee; }
+  .border-brand { border-color: #22d3ee; }
 
-  /* Carousel dot styles */
-  .dot {
-    @apply h-1.5 rounded-full bg-white/20 transition-all duration-300;
+  /* PREMIUM OPEN-SEA STYLE CARDS */
+  .nyan-card {
+    background: #0b121d;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .dot-active {
-    @apply w-6 bg-[#22d3ee];
+
+  .nyan-card:hover {
+    transform: translateY(-4px);
+    border-color: #22d3ee;
+    box-shadow: 0 0 25px rgba(34, 211, 238, 0.12);
+  }
+
+  /* CAROUSEL SPECIFIC UTILITIES */
+  .hero-indicator {
+    @apply h-1 rounded-full bg-white/20 transition-all duration-500;
+  }
+  
+  .hero-indicator-active {
+    @apply w-10 bg-[#22d3ee];
+  }
+
+  .glass-morph {
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .fade-up {
+    animation: fadeUp 0.5s ease-out forwards;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 }
