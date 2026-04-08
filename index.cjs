@@ -10,43 +10,77 @@ const MARKET_ABI = [
   "event ItemSold(address indexed buyer, address indexed nftAddress, uint256 indexed tokenId, uint256 price)"
 ];
 
+const NFT_ABI = [
+  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
+];
+
 const market = new ethers.Contract(process.env.MARKET_ADDRESS, MARKET_ABI, provider);
+const shackoNft = new ethers.Contract(process.env.LAUNCHPAD_ADDRESS, NFT_ABI, provider);
+
+async function updateCollectionStats(nftAddress) {
+  // 1. Get Floor Price
+  const { data: floorData } = await supabase
+    .from('listings')
+    .select('price')
+    .eq('contract_address', nftAddress.toLowerCase())
+    .eq('status', 'active')
+    .order('price', { ascending: true })
+    .limit(1);
+
+  const floor = floorData?.[0]?.price || 0;
+
+  // 2. Calculate Unique Owners
+  const { data: ownerData } = await supabase
+    .from('nfts')
+    .select('owner_address')
+    .eq('contract_address', nftAddress.toLowerCase());
+  
+  const uniqueOwners = new Set(ownerData?.map(o => o.owner_address)).size;
+
+  // 3. Update Supabase
+  await supabase
+    .from('collections')
+    .update({ 
+      floor_price: floor, 
+      owners: uniqueOwners,
+      total_supply: 2000 
+    })
+    .eq('contract_address', nftAddress.toLowerCase());
+}
 
 async function syncEvents() {
   try {
     const currentBlock = await provider.getBlockNumber();
-    // We check the last 10 blocks every 10 seconds to be safe
-    const fromBlock = currentBlock - 10; 
+    const fromBlock = currentBlock - 10;
 
-    console.log(`Checking blocks ${fromBlock} to ${currentBlock}...`);
+    // Watch Transfers (Mints/Buys)
+    const transfers = await shackoNft.queryFilter("Transfer", fromBlock, currentBlock);
+    for (const log of transfers) {
+      const { to, tokenId } = log.args;
+      await supabase.from('nfts').upsert({
+        contract_address: process.env.LAUNCHPAD_ADDRESS.toLowerCase(),
+        token_id: tokenId.toString(),
+        owner_address: to.toLowerCase()
+      });
+      await updateCollectionStats(process.env.LAUNCHPAD_ADDRESS);
+    }
 
+    // Watch Listings (Floor Price)
     const listings = await market.queryFilter("ItemListed", fromBlock, currentBlock);
     for (const log of listings) {
-      const { seller, nftAddress, tokenId, price } = log.args;
-      const p = ethers.formatEther(price);
-      console.log(`[LISTED] #${tokenId} for ${p} USD`);
+      const { nftAddress, tokenId, price } = log.args;
       await supabase.from('listings').upsert({
         contract_address: nftAddress.toLowerCase(),
         token_id: tokenId.toString(),
-        seller: seller.toLowerCase(),
-        price: p,
+        price: ethers.formatEther(price),
         status: 'active'
       });
+      await updateCollectionStats(nftAddress);
     }
-
-    const sales = await market.queryFilter("ItemSold", fromBlock, currentBlock);
-    for (const log of sales) {
-      const { nftAddress, tokenId, price } = log.args;
-      console.log(`[SOLD] #${tokenId}`);
-      await supabase.from('listings').update({ status: 'sold' })
-        .match({ contract_address: nftAddress.toLowerCase(), token_id: tokenId.toString() });
-    }
-
   } catch (err) {
-    console.error("Polling Error:", err.message);
+    console.error("Sync Error:", err.message);
   }
 }
 
-console.log("🚀 Tempo Indexer (Stable Mode) Started...");
-// Run every 10 seconds
+console.log("🚀 Shacko Indexer + Owner Tracker Live...");
 setInterval(syncEvents, 10000);
