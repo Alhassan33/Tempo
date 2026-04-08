@@ -8,7 +8,7 @@ import { CardSkeleton } from "@/components/Skeleton.jsx";
 import ListModal from "@/components/ListModal.jsx";
 import NFTImage from "@/components/NFTImage.jsx";
 
-// ─── Minimal ERC-721 ABI for reading ownership ────────────────────────────────
+// ─── Minimal ERC-20 ABI for reading ownership ────────────────────────────────
   async function fetchPortfolio() {
     if (!address || !publicClient) return;
     setLoading(true);
