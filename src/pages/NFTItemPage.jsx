@@ -1,8 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAccount } from "wagmi";
-// ... (keep your lucide-react imports as they are)
-
 import { useCollection, useListings } from "@/hooks/useSupabase";
 import { useMarketplace } from "@/hooks/useMarketplace";
 import { useNFTMetadata, formatTraits, traitColor } from "@/hooks/useNFTMetadata";
