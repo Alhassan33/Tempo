@@ -3,68 +3,24 @@
 @tailwind utilities;
 
 @layer base {
-  *,
-  *::before,
-  *::after {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
-
   body {
-    /* 1. Switch to Helvetica Neue as the Primary Font */
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    /* 2. Deeper, premium black background */
-    background-color: #03080f; 
+    background-color: #03080f; /* Deep "OpenSea" black */
     color: #ffffff;
-    min-height: 100vh;
-    overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
-  }
-
-  /* 3. Brand-specific Cyan Grid */
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    background-image: 
-      linear-gradient(rgba(34, 211, 238, 0.02) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(34, 211, 238, 0.02) 1px, transparent 1px);
-    background-size: 32px 32px;
-    pointer-events: none;
-    z-index: 0;
   }
 }
 
 @layer utilities {
-  /* Helvetica Bold for those heavy Brand Headers */
-  .font-display {
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    text-transform: uppercase;
-  }
-
-  /* Keep a generic monospace ONLY for Token IDs (like #2058) */
-  .font-id {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    letter-spacing: -0.05em;
-  }
-
-  /* Your Brand Highlights */
+  /* Brand color for specific highlights */
   .text-brand { color: #22d3ee; }
   .bg-brand { background-color: #22d3ee; }
 
-  /* Premium High-Density Card */
-  .nyan-card {
-    background: #0b121d;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 10px;
-    transition: all 0.2s ease;
+  /* Carousel dot styles */
+  .dot {
+    @apply h-1.5 rounded-full bg-white/20 transition-all duration-300;
   }
-
-  .nyan-card:hover {
-    border-color: #22d3ee;
-    transform: translateY(-2px);
+  .dot-active {
+    @apply w-6 bg-[#22d3ee];
   }
 }
