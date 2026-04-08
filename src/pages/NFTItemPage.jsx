@@ -1,12 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAccount } from "wagmi";
-import {
-  ArrowLeft, ExternalLink, Tag, ShoppingCart,
-  AlertCircle, CheckCircle2, ChevronDown, ChevronUp,
-  Layers, Activity, BarChart2, Gavel, Share2, Heart,
-  RefreshCw, Copy, Check
-} from "lucide-react";
+// ... (keep your lucide-react imports as they are)
 
 import { useCollection, useListings } from "@/hooks/useSupabase";
 import { useMarketplace } from "@/hooks/useMarketplace";
@@ -16,9 +11,30 @@ import ActivityFeed from "@/components/ActivityFeed.jsx";
 import CollectionBids from "@/components/CollectionBids.jsx";
 import PriceChart from "@/components/PriceChart.jsx";
 
-const NFT_CONTRACT   = "0x1Ee82CC5946EdBD88eaf90D6d3c2B5baA4f9966C";
-const COLLECTION_SLUG = "temponyaw";
-const EXPLORER_BASE  = "https://explore.tempo.xyz";
+const EXPLORER_BASE = "https://explore.tempo.xyz";
+
+export default function NFTItemPage() {
+  // 1. Grab the slug and tokenId from the URL
+  const { collectionId, tokenId } = useParams(); 
+  const navigate = useNavigate();
+  const { address } = useAccount();
+
+  // 2. Fetch collection data dynamically using the slug from the URL
+  const { collection, loading: collLoading } = useCollection(collectionId);
+  
+  // 3. Derive the contract address and metadata base from the database
+  const contractAddress = collection?.contract_address;
+  const metadataBaseUri = collection?.metadata_base_uri;
+
+  // 4. Pass the dynamic URI to your metadata hook
+  const { metadata, loading: metaLoading } = useNFTMetadata(
+    contractAddress, 
+    tokenId,
+    metadataBaseUri
+  );
+
+  const { listings } = useListings(contractAddress);
+  const listing = listings?.find(l => l.token_id === Number(tokenId));
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function shortenAddress(addr) {
