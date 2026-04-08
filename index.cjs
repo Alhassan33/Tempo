@@ -15,10 +15,9 @@ const NFT_ABI = [
 ];
 
 const market = new ethers.Contract(process.env.MARKET_ADDRESS, MARKET_ABI, provider);
-const shackoNft = new ethers.Contract(process.env.LAUNCHPAD_ADDRESS, NFT_ABI, provider);
+const nftContract = new ethers.Contract(process.env.LAUNCHPAD_ADDRESS, NFT_ABI, provider);
 
 async function updateCollectionStats(nftAddress) {
-  // 1. Get Floor Price
   const { data: floorData } = await supabase
     .from('listings')
     .select('price')
@@ -29,7 +28,6 @@ async function updateCollectionStats(nftAddress) {
 
   const floor = floorData?.[0]?.price || 0;
 
-  // 2. Calculate Unique Owners
   const { data: ownerData } = await supabase
     .from('nfts')
     .select('owner_address')
@@ -37,7 +35,6 @@ async function updateCollectionStats(nftAddress) {
   
   const uniqueOwners = new Set(ownerData?.map(o => o.owner_address)).size;
 
-  // 3. Update Supabase
   await supabase
     .from('collections')
     .update({ 
@@ -53,8 +50,7 @@ async function syncEvents() {
     const currentBlock = await provider.getBlockNumber();
     const fromBlock = currentBlock - 10;
 
-    // Watch Transfers (Mints/Buys)
-    const transfers = await shackoNft.queryFilter("Transfer", fromBlock, currentBlock);
+    const transfers = await nftContract.queryFilter("Transfer", fromBlock, currentBlock);
     for (const log of transfers) {
       const { to, tokenId } = log.args;
       await supabase.from('nfts').upsert({
@@ -65,7 +61,6 @@ async function syncEvents() {
       await updateCollectionStats(process.env.LAUNCHPAD_ADDRESS);
     }
 
-    // Watch Listings (Floor Price)
     const listings = await market.queryFilter("ItemListed", fromBlock, currentBlock);
     for (const log of listings) {
       const { nftAddress, tokenId, price } = log.args;
@@ -82,5 +77,5 @@ async function syncEvents() {
   }
 }
 
-console.log("🚀 Shacko Indexer + Owner Tracker Live...");
+console.log("🚀 Marketplace Indexer Active...");
 setInterval(syncEvents, 10000);
