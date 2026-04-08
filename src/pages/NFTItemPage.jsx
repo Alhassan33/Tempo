@@ -13,26 +13,31 @@ const EXPLORER_BASE = "https://explore.tempo.xyz";
 
 export default function NFTItemPage() {
   // 1. Grab the slug and tokenId from the URL
-  const { collectionId, tokenId } = useParams(); 
+  const { id, tokenId } = useParams(); 
   const navigate = useNavigate();
   const { address } = useAccount();
 
-  // 2. Fetch collection data dynamically using the slug from the URL
-  const { collection, loading: collLoading } = useCollection(collectionId);
+  // 2. Fetch the collection using the 'id' (which is the slug 'temponyan')
+  const { collection, loading: collLoading } = useCollection(id);
   
-  // 3. Derive the contract address and metadata base from the database
+  // 3. These pull the dynamic values from your Supabase 'collections' table
   const contractAddress = collection?.contract_address;
   const metadataBaseUri = collection?.metadata_base_uri;
 
-  // 4. Pass the dynamic URI to your metadata hook
+  // 4. Pass the dynamic base URI to your metadata hook
   const { metadata, loading: metaLoading } = useNFTMetadata(
     contractAddress, 
     tokenId,
     metadataBaseUri
   );
 
+  // 5. Use the dynamic contract address for listings
   const { listings } = useListings(contractAddress);
-  const listing = listings?.find(l => l.token_id === Number(tokenId));
+  
+  // Find the specific listing for this token
+  const listing = listings?.find(
+    (l) => Number(l.token_id) === Number(tokenId) && l.active
+  );
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function shortenAddress(addr) {
