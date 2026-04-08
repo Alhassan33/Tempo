@@ -2,11 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Importing Outfit for heavy headers (Blever style) 
-   and JetBrains Mono for a cleaner technical look 
-*/
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@700;900&family=JetBrains+Mono:wght@500;700&family=Syne:wght@400;700;800&family=Space+Mono:wght@400;700&display=swap');
-
 @layer base {
   *,
   *::before,
@@ -16,84 +11,60 @@
     padding: 0;
   }
 
-  html {
-    scroll-behavior: smooth;
-  }
-
   body {
-    /* Keep Syne as the base, but Outfit will handle the 'Brand' headers */
-    font-family: "Syne", sans-serif;
-    background-color: #0b0f14;
-    color: #e6edf3;
+    /* 1. Switch to Helvetica Neue as the Primary Font */
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    /* 2. Deeper, premium black background */
+    background-color: #03080f; 
+    color: #ffffff;
     min-height: 100vh;
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Subtle grid overlay */
+  /* 3. Brand-specific Cyan Grid */
   body::before {
     content: "";
     position: fixed;
     inset: 0;
-    background-image: linear-gradient(rgba(34, 211, 238, 0.02) 1px, transparent 1px),
+    background-image: 
+      linear-gradient(rgba(34, 211, 238, 0.02) 1px, transparent 1px),
       linear-gradient(90deg, rgba(34, 211, 238, 0.02) 1px, transparent 1px);
-    background-size: 48px 48px;
+    background-size: 32px 32px;
     pointer-events: none;
     z-index: 0;
-  }
-
-  #root {
-    position: relative;
-    z-index: 1;
-  }
-
-  ::-webkit-scrollbar {
-    width: 5px;
-  }
-  ::-webkit-scrollbar-track {
-    background: #0b0f14;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.06);
-    border-radius: 3px;
   }
 }
 
 @layer utilities {
-  /* WEB3 BRAND HEADER 
-     Use this for "TEMPONYAW" title to match Blever Pass
-  */
+  /* Helvetica Bold for those heavy Brand Headers */
   .font-display {
-    font-family: "Outfit", sans-serif;
-    font-weight: 900;
-    letter-spacing: -0.04em;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.02em;
     text-transform: uppercase;
   }
 
-  /* CLEAN TECHNICAL MONO
-     Use this for Floor Prices and USD values
-  */
-  .font-mono-web3 {
-    font-family: "JetBrains Mono", monospace;
-    letter-spacing: -0.02em;
+  /* Keep a generic monospace ONLY for Token IDs (like #2058) */
+  .font-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: -0.05em;
   }
 
-  /* Keep your original Space Mono for general code/technical labels */
-  .font-mono {
-    font-family: "Space Mono", monospace;
+  /* Your Brand Highlights */
+  .text-brand { color: #22d3ee; }
+  .bg-brand { background-color: #22d3ee; }
+
+  /* Premium High-Density Card */
+  .nyan-card {
+    background: #0b121d;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    transition: all 0.2s ease;
   }
 
-  .card-hover {
-    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  .nyan-card:hover {
+    border-color: #22d3ee;
+    transform: translateY(-2px);
   }
-  .card-hover:hover {
-    transform: translateY(-3px);
-    border-color: rgba(34, 211, 238, 0.22) !important;
-    box-shadow: 0 0 24px rgba(34, 211, 238, 0.1);
-  }
-
-  .fade-up {
-    animation: fadeUp 0.45s ease both;
-  }
-  /* ... rest of your animations stay the same */
 }
