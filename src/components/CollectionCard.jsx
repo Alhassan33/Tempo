@@ -2,77 +2,83 @@ import { useNavigate } from "react-router-dom";
 import { CheckCircle2, ChevronUp, ChevronDown } from "lucide-react";
 import NFTImage from "./NFTImage.jsx";
 
-function formatEth(v) {
-  if (!v) return "—";
-  return `${Number(v).toFixed(4)} ETH`;
+// Updated helper to handle USD or ETH based on your chain's pricing
+function formatPrice(v) {
+  if (v === undefined || v === null) return "—";
+  return `${Number(v).toLocaleString()}`; 
 }
 
 export default function CollectionCard({ collection, rank }) {
   const navigate = useNavigate();
-  const isPos = (collection.change24h ?? 0) >= 0;
+  
+  // Logic check for 24h performance
+  const change = collection.change_24h ?? 0;
+  const isPos = change >= 0;
 
   return (
     <tr
-      className="cursor-pointer transition-colors"
-      style={{ borderBottom: "1px solid rgba(255,255,255,0.025)" }}
-      onClick={() => navigate(`/collection/${collection.id ?? collection.address}`)}
-      onMouseOver={(e) => (e.currentTarget.style.background = "rgba(34,211,238,0.03)")}
-      onMouseOut={(e) => (e.currentTarget.style.background = "")}
+      className="group cursor-pointer transition-all border-b border-white/5 hover:bg-cyan-400/[0.03]"
+      onClick={() => navigate(`/collection/${collection.slug}`)}
     >
-      {/* Rank */}
-      <td className="py-3.5 px-4">
-        <span className="font-mono text-xs" style={{ color: "#9da7b3" }}>{rank}</span>
+      {/* Rank Column */}
+      <td className="py-4 px-4">
+        <span className="font-mono text-xs text-gray-500">{rank}</span>
       </td>
 
-      {/* Collection */}
-      <td className="py-3.5 px-4">
+      {/* Collection Identity */}
+      <td className="py-4 px-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex-shrink-0 overflow-hidden">
+          <div className="w-12 h-12 rounded-xl overflow-hidden bg-[#161d28] border border-white/5">
             <NFTImage
-              src={collection.image}
+              src={collection.image_url}
               alt={collection.name}
-              gradient={collection.gradient}
-              style={{ width: "100%", height: "100%" }}
+              className="w-full h-full object-cover"
             />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-semibold" style={{ color: "#e6edf3" }}>{collection.name}</span>
-              {collection.verified && <CheckCircle2 size={13} color="#22d3ee" />}
+              <span className="text-sm font-bold text-white uppercase italic tracking-tighter">
+                {collection.name}
+              </span>
+              {collection.verified && <CheckCircle2 size={13} className="text-cyan-400" />}
             </div>
-            <span className="text-[11px]" style={{ color: "#9da7b3" }}>
-              {(collection.itemCount ?? collection.supply ?? 0).toLocaleString()} items
+            <span className="text-[10px] font-black uppercase tracking-widest text-gray-600">
+              {collection.total_supply?.toLocaleString()} items
             </span>
           </div>
         </div>
       </td>
 
-      <td className="py-3.5 px-4 text-right">
-        <span className="font-mono text-sm" style={{ color: "#e6edf3" }}>
-          {formatEth(collection.floor ?? collection.floorPrice)}
-        </span>
+      {/* Floor Price */}
+      <td className="py-4 px-4 text-right">
+        <div className="flex flex-col items-end">
+          <span className="font-mono text-sm font-bold text-white">
+            {formatPrice(collection.floor_price)}
+          </span>
+          <span className="text-[9px] font-bold text-gray-600 uppercase">FLOOR</span>
+        </div>
       </td>
 
-      <td className="py-3.5 px-4 text-right hidden md:table-cell">
-        <span className="font-mono text-sm" style={{ color: "#9da7b3" }}>
-          {formatEth(collection.topOffer)}
-        </span>
-      </td>
-
-      <td className="py-3.5 px-4 text-right">
+      {/* 24h Change */}
+      <td className="py-4 px-4 text-right">
         <span
-          className="font-mono text-sm inline-flex items-center gap-0.5"
-          style={{ color: isPos ? "#22c55e" : "#ef4444" }}
+          className={`font-mono text-sm font-bold inline-flex items-center gap-0.5 ${
+            isPos ? "text-green-400" : "text-red-400"
+          }`}
         >
           {isPos ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          {Math.abs(collection.change24h ?? 0).toFixed(2)}%
+          {Math.abs(change).toFixed(2)}%
         </span>
       </td>
 
-      <td className="py-3.5 px-4 text-right hidden lg:table-cell">
-        <span className="font-mono text-sm" style={{ color: "#e6edf3" }}>
-          {collection.volume?.toFixed(1) ?? "—"} ETH
-        </span>
+      {/* Volume (Hidden on smaller screens) */}
+      <td className="py-4 px-4 text-right hidden lg:table-cell">
+        <div className="flex flex-col items-end">
+          <span className="font-mono text-sm font-bold text-white">
+            {formatPrice(collection.volume_all_time)}
+          </span>
+          <span className="text-[9px] font-bold text-gray-600 uppercase">VOLUME</span>
+        </div>
       </td>
     </tr>
   );
