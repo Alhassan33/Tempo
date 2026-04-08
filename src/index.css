@@ -1,11 +1,10 @@
+/* ✅ 1. FONT IMPORTS MUST BE AT THE ABSOLUTE TOP */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@700;900&family=JetBrains+Mono:wght@500;700&family=Syne:wght@400;700;800&family=Space+Mono:wght@400;700&display=swap');
+
+/* 2. TAILWIND DIRECTIVES */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Importing Outfit for heavy headers (Blever style) 
-   and JetBrains Mono for a cleaner technical look 
-*/
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@700;900&family=JetBrains+Mono:wght@500;700&family=Syne:wght@400;700;800&family=Space+Mono:wght@400;700&display=swap');
 
 @layer base {
   *,
@@ -21,7 +20,6 @@
   }
 
   body {
-    /* Keep Syne as the base, but Outfit will handle the 'Brand' headers */
     font-family: "Syne", sans-serif;
     background-color: #0b0f14;
     color: #e6edf3;
@@ -60,9 +58,6 @@
 }
 
 @layer utilities {
-  /* WEB3 BRAND HEADER 
-     Use this for "TEMPONYAW" title to match Blever Pass
-  */
   .font-display {
     font-family: "Outfit", sans-serif;
     font-weight: 900;
@@ -70,15 +65,11 @@
     text-transform: uppercase;
   }
 
-  /* CLEAN TECHNICAL MONO
-     Use this for Floor Prices and USD values
-  */
   .font-mono-web3 {
     font-family: "JetBrains Mono", monospace;
     letter-spacing: -0.02em;
   }
 
-  /* Keep your original Space Mono for general code/technical labels */
   .font-mono {
     font-family: "Space Mono", monospace;
   }
@@ -95,5 +86,4 @@
   .fade-up {
     animation: fadeUp 0.45s ease both;
   }
-  /* ... rest of your animations stay the same */
 }
