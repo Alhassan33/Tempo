@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"; // ✅ lowercase import (was capital I)
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCollections, useFeaturedProjects } from "../hooks/useSupabase";
 
@@ -42,19 +42,6 @@ function Stat({ label, value, small }) {
   );
 }
 
-function SkeletonCard({ large }) {
-  return (
-    <div className={`rounded-2xl overflow-hidden animate-pulse ${large ? "col-span-2 row-span-2" : ""}`}
-      style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}>
-      <div className={`w-full ${large ? "h-72" : "h-36"}`} style={{ background: "#161d28" }} />
-      <div className="p-4 space-y-2">
-        <div className="h-3 rounded w-2/3" style={{ background: "#161d28" }} />
-        <div className="h-3 rounded w-1/3" style={{ background: "#161d28" }} />
-      </div>
-    </div>
-  );
-}
-
 function useCountdown(isoTime) {
   const [secs, setSecs] = useState(() =>
     Math.max(0, Math.floor((new Date(isoTime) - Date.now()) / 1000))
@@ -66,13 +53,86 @@ function useCountdown(isoTime) {
   return fmtTime(secs);
 }
 
+// --- NEW HERO CAROUSEL COMPONENT ---
+function HeroCarousel({ collections, navigate }) {
+  const [current, setCurrent] = useState(0);
+  const featured = collections.slice(0, 5);
+
+  useEffect(() => {
+    if (featured.length === 0) return;
+    const timer = setInterval(() => {
+      setCurrent((prev) => (prev === featured.length - 1 ? 0 : prev + 1));
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [featured.length]);
+
+  if (featured.length === 0) return null;
+
+  return (
+    <section className="relative w-full h-[65vh] min-h-[500px] overflow-hidden">
+      {featured.map((c, i) => (
+        <div
+          key={c.id}
+          className={`absolute inset-0 transition-opacity duration-1000 ease-in-out cursor-pointer ${
+            i === current ? "opacity-100 z-10" : "opacity-0 z-0"
+          }`}
+          onClick={() => navigate(`/collection/${c.slug}`)}
+        >
+          {/* Gradient Overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-[#03080f] via-transparent to-black/20 z-20" />
+          
+          {/* Hero Image with Ken Burns Effect */}
+          <img 
+            src={c.banner_url || c.logo_url} 
+            alt={c.name}
+            className={`w-full h-full object-cover transition-transform duration-[10000ms] ${
+              i === current ? "scale-100" : "scale-110"
+            }`}
+          />
+
+          {/* Floating Info Box */}
+          <div className="absolute bottom-16 left-6 md:left-12 z-30 fade-up">
+            <h1 className="text-5xl md:text-7xl font-black mb-6 tracking-tighter uppercase italic text-white flex items-center gap-4">
+              {c.name}
+              {c.verified && (
+                <span className="text-2xl not-italic bg-[#22d3ee] text-[#03080f] w-8 h-8 rounded-full flex items-center justify-center">✓</span>
+              )}
+            </h1>
+            
+            <div className="flex gap-0.5 p-1 glass-morph rounded-2xl inline-flex">
+              <div className="px-6 py-4">
+                <p className="text-[10px] uppercase font-bold text-gray-400 tracking-widest mb-1">Floor Price</p>
+                <p className="text-xl font-bold" style={{ color: "#e6edf3" }}>
+                  {c.floor_price ? `${c.floor_price.toFixed(2)}` : "—"} <span className="text-[#22d3ee]">USD</span>
+                </p>
+              </div>
+              <div className="px-6 py-4 border-l border-white/10">
+                <p className="text-[10px] uppercase font-bold text-gray-400 tracking-widest mb-1">Total Volume</p>
+                <p className="text-xl font-bold" style={{ color: "#e6edf3" }}>
+                  {c.volume_total ? `${c.volume_total.toLocaleString()}` : "—"} <span className="text-[#22d3ee]">USD</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Slide Indicators */}
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-40 flex gap-2">
+        {featured.map((_, i) => (
+          <div key={i} className={`hero-indicator ${i === current ? 'hero-indicator-active' : 'w-2'}`} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function MintCard({ project, navigate }) {
   const countdown = useCountdown(project.mint_start_time);
   const isLive = project.status === "live";
 
   return (
-    <div className="flex-shrink-0 w-48 rounded-2xl overflow-hidden cursor-pointer card-hover"
-      style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}
+    <div className="flex-shrink-0 w-48 rounded-2xl overflow-hidden cursor-pointer nyan-card"
       onClick={() => navigate("/launchpad")}>
       <div className="relative">
         <CollectionImg logoUrl={project.banner_url || project.logo_url} name={project.name} className="h-28 w-full" />
@@ -99,8 +159,7 @@ function MintCard({ project, navigate }) {
           {isLive ? "Minting now" : countdown}
         </div>
         <button className="w-full h-7 rounded-lg text-xs font-bold transition-colors"
-          style={{ background: "#22d3ee", color: "#0b0f14", border: "none", cursor: "pointer", fontFamily: "Syne, sans-serif" }}
-          onClick={(e) => { e.stopPropagation(); navigate("/launchpad"); }}>
+          style={{ background: "#22d3ee", color: "#0b0f14", border: "none", cursor: "pointer" }}>
           {isLive ? "Mint" : "View"}
         </button>
       </div>
@@ -108,109 +167,14 @@ function MintCard({ project, navigate }) {
   );
 }
 
-function FeaturedCollections({ navigate }) {
-  const [tab, setTab] = useState("trending");
-  const { collections, isLoading } = useCollections(tab === "trending" ? "volume_total" : "volume_24h");
-  const featured = collections.slice(0, 5);
-  const [hero, ...rest] = featured;
-
-  if (isLoading) {
-    return (
-      <section className="px-6 pt-8 pb-6">
-        <div className="h-5 w-48 rounded animate-pulse mb-5" style={{ background: "#161d28" }} />
-        <div className="grid grid-cols-4 gap-4">
-          <SkeletonCard large />
-          {[1,2,3,4].map((i) => <SkeletonCard key={i} />)}
-        </div>
-      </section>
-    );
-  }
-
-  if (!hero) {
-    return (
-      <section className="px-6 pt-8 pb-6 fade-up">
-        <h2 className="text-lg font-bold mb-5" style={{ color: "#e6edf3" }}>Featured Collections</h2>
-        <div className="rounded-2xl p-12 text-center" style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}>
-          <div className="text-4xl mb-3">🎨</div>
-          <div className="font-semibold mb-1" style={{ color: "#e6edf3" }}>No collections yet</div>
-          <div className="text-sm" style={{ color: "#9da7b3" }}>Collections will appear here once approved</div>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="px-6 pt-8 pb-6 fade-up">
-      <div className="flex items-center justify-between mb-5">
-        <h2 className="text-lg font-bold tracking-tight" style={{ color: "#e6edf3" }}>Featured Collections</h2>
-        <div className="flex overflow-hidden rounded-lg" style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)" }}>
-          {["trending", "movers"].map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className="px-4 py-1.5 text-xs font-semibold transition-colors"
-              style={{ color: tab === t ? "#22d3ee" : "#9da7b3", background: tab === t ? "rgba(34,211,238,0.08)" : "transparent", border: "none", cursor: "pointer", fontFamily: "Syne, sans-serif" }}>
-              {t === "trending" ? "Trending" : "Top Movers"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-4 gap-4">
-        {/* ✅ Use slug for navigation */}
-        <div className="col-span-2 row-span-2 rounded-2xl overflow-hidden cursor-pointer card-hover"
-          style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}
-          onClick={() => navigate(`/collection/${hero.slug}`)}>
-          <CollectionImg logoUrl={hero.banner_url} name={hero.name} className="h-72 w-full" />
-          <div className="p-4">
-            {hero.verified && (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded mb-2"
-                style={{ background: "rgba(34,211,238,0.1)", border: "1px solid rgba(34,211,238,0.2)", color: "#22d3ee" }}>
-                ✓ Verified
-              </span>
-            )}
-            <div className="font-bold text-lg mb-3" style={{ color: "#e6edf3" }}>{hero.name}</div>
-            <div className="flex gap-5">
-              <Stat label="Floor"  value={hero.floor_price  ? `${hero.floor_price.toFixed(2)} USD`  : "—"} />
-              <Stat label="Volume" value={hero.volume_total ? `${hero.volume_total.toLocaleString()} USD` : "—"} />
-              <Stat label="Sales"  value={hero.total_sales  || "—"} />
-            </div>
-          </div>
-        </div>
-
-        {/* ✅ Use slug for navigation */}
-        {rest.map((c, i) => (
-          <div key={c.id} className="rounded-2xl overflow-hidden cursor-pointer card-hover"
-            style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}
-            onClick={() => navigate(`/collection/${c.slug}`)}>
-            <div className="relative">
-              <CollectionImg logoUrl={c.banner_url || c.logo_url} name={c.name} className="h-36 w-full" />
-              <span className="absolute top-2 left-2 text-xs font-mono px-2 py-0.5 rounded"
-                style={{ background: "rgba(11,15,20,0.75)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.06)", color: "#22d3ee" }}>
-                #{i + 2}
-              </span>
-            </div>
-            <div className="p-3">
-              <div className="font-bold text-sm mb-2 truncate" style={{ color: "#e6edf3" }}>{c.name}</div>
-              <div className="flex gap-4">
-                {/* ✅ USD not ETH */}
-                <Stat label="Floor" value={c.floor_price ? `${c.floor_price.toFixed(2)} USD` : "—"} small />
-                <Stat label="Sales" value={c.total_sales || "—"} small />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function LiveMints({ navigate }) {
   const { projects, isLoading } = useFeaturedProjects();
 
   if (isLoading) return (
-    <section className="px-6 pb-6">
-      <div className="h-5 w-32 rounded animate-pulse mb-4" style={{ background: "#161d28" }} />
-      <div className="flex gap-3">
-        {[1,2,3].map((i) => <div key={i} className="flex-shrink-0 w-48 h-64 rounded-2xl animate-pulse" style={{ background: "#121821" }} />)}
+    <section className="px-6 py-12">
+      <div className="h-5 w-32 rounded animate-pulse mb-6" style={{ background: "#161d28" }} />
+      <div className="flex gap-4">
+        {[1,2,3,4].map((i) => <div key={i} className="flex-shrink-0 w-48 h-64 rounded-2xl animate-pulse" style={{ background: "#121821" }} />)}
       </div>
     </section>
   );
@@ -218,15 +182,15 @@ function LiveMints({ navigate }) {
   if (!projects.length) return null;
 
   return (
-    <section className="px-6 pb-6 fade-up-d1">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold tracking-tight" style={{ color: "#e6edf3" }}>Live Mints</h2>
-        <button onClick={() => navigate("/launchpad")} className="text-xs font-semibold"
+    <section className="px-6 py-12 fade-up">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold tracking-tight" style={{ color: "#e6edf3" }}>Live Mints</h2>
+        <button onClick={() => navigate("/launchpad")} className="text-xs font-bold uppercase tracking-widest"
           style={{ color: "#22d3ee", background: "none", border: "none", cursor: "pointer" }}>
-          View all →
+          View all Launchpads →
         </button>
       </div>
-      <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
+      <div className="flex gap-4 overflow-x-auto pb-4" style={{ scrollbarWidth: "none" }}>
         {projects.map((p) => <MintCard key={p.id} project={p} navigate={navigate} />)}
       </div>
     </section>
@@ -256,24 +220,21 @@ function CollectionsTable({ navigate }) {
   ];
 
   return (
-    <section className="px-6 pb-16 fade-up-d2">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold tracking-tight" style={{ color: "#e6edf3" }}>Collections</h2>
-        <span className="text-xs" style={{ color: "#9da7b3" }}>
-          Sorted by {sortKey.replace(/_/g, " ")} {sortDir === "desc" ? "↓" : "↑"}
-        </span>
+    <section className="px-6 pb-24 fade-up">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold tracking-tight" style={{ color: "#e6edf3" }}>Market Rankings</h2>
       </div>
 
-      <div className="rounded-2xl overflow-hidden" style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}>
+      <div className="rounded-2xl overflow-hidden" style={{ background: "#0b121d", border: "1px solid rgba(255,255,255,0.05)" }}>
         <table className="w-full border-collapse">
           <thead>
-            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-              <th className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wide" style={{ color: "#9da7b3", width: 36 }}>#</th>
-              <th className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wide" style={{ color: "#9da7b3" }}>Collection</th>
+            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+              <th className="text-left px-6 py-4 text-[11px] font-black uppercase tracking-widest text-gray-500" style={{ width: 60 }}>#</th>
+              <th className="text-left px-6 py-4 text-[11px] font-black uppercase tracking-widest text-gray-500">Collection</th>
               {cols.map((c) => (
                 <th key={c.key}
-                  className="text-right px-4 py-3 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none"
-                  style={{ color: sortKey === c.key ? "#22d3ee" : "#9da7b3" }}
+                  className="text-right px-6 py-4 text-[11px] font-black uppercase tracking-widest cursor-pointer select-none"
+                  style={{ color: sortKey === c.key ? "#22d3ee" : "#6b7280" }}
                   onClick={() => handleSort(c.key)}>
                   {c.label} {sortKey === c.key ? (sortDir === "desc" ? "↓" : "↑") : ""}
                 </th>
@@ -285,57 +246,45 @@ function CollectionsTable({ navigate }) {
               [...Array(5)].map((_, i) => (
                 <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
                   {[...Array(6)].map((_, j) => (
-                    <td key={j} className="px-4 py-3">
-                      <div className="h-3 rounded animate-pulse" style={{ background: "#161d28", width: j === 1 ? "120px" : "60px" }} />
+                    <td key={j} className="px-6 py-4">
+                      <div className="h-4 rounded animate-pulse" style={{ background: "#161d28", width: j === 1 ? "160px" : "80px" }} />
                     </td>
                   ))}
                 </tr>
               ))
-            ) : sorted.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-sm" style={{ color: "#9da7b3" }}>
-                  No collections yet — be the first to launch on TempoNFT
-                </td>
-              </tr>
             ) : (
               sorted.map((c, i) => (
                 <tr key={c.id}
-                  className="cursor-pointer transition-colors"
+                  className="cursor-pointer transition-colors hover:bg-white/[0.02]"
                   style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(34,211,238,0.04)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                  // ✅ Use slug
                   onClick={() => navigate(`/collection/${c.slug}`)}>
-                  <td className="px-4 py-3">
-                    <span className="font-mono text-xs" style={{ color: "#9da7b3" }}>{i + 1}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 bg-gradient-to-br ${GRAD_KEYS[i % 5]}`}>
+                  <td className="px-6 py-4 text-gray-500 font-mono text-xs">{i + 1}</td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 bg-gradient-to-br ${GRAD_KEYS[i % 5]}`}>
                         {c.logo_url
                           ? <img src={c.logo_url} alt={c.name} className="w-full h-full object-cover" />
                           : <div className="w-full h-full flex items-center justify-center font-bold text-sm" style={{ color: "#22d3ee" }}>{c.name?.slice(0, 2).toUpperCase()}</div>
                         }
                       </div>
                       <div>
-                        <div className="text-sm font-semibold flex items-center gap-1" style={{ color: "#e6edf3" }}>
-                          {c.name}{c.verified && <span style={{ color: "#22d3ee" }}>✓</span>}
+                        <div className="text-sm font-bold flex items-center gap-1.5" style={{ color: "#e6edf3" }}>
+                          {c.name}{c.verified && <span className="text-[#22d3ee]">✓</span>}
                         </div>
-                        <div className="text-xs" style={{ color: "#9da7b3" }}>{c.total_supply?.toLocaleString() || "—"} items</div>
+                        <div className="text-[11px] font-medium text-gray-500 uppercase tracking-tighter">{c.total_supply?.toLocaleString() || "—"} Assets</div>
                       </div>
                     </div>
                   </td>
-                  {/* ✅ USD labels */}
-                  <td className="px-4 py-3 text-right font-mono text-sm" style={{ color: "#e6edf3" }}>
+                  <td className="px-6 py-4 text-right font-bold text-sm" style={{ color: "#e6edf3" }}>
                     {c.floor_price ? `${c.floor_price.toFixed(2)} USD` : "—"}
                   </td>
-                  <td className="px-4 py-3 text-right font-mono text-sm" style={{ color: "#9da7b3" }}>
+                  <td className="px-6 py-4 text-right font-medium text-sm text-gray-400">
                     {c.volume_24h ? `${c.volume_24h.toFixed(2)} USD` : "—"}
                   </td>
-                  <td className="px-4 py-3 text-right font-mono text-sm" style={{ color: "#e6edf3" }}>
+                  <td className="px-6 py-4 text-right font-bold text-sm" style={{ color: "#e6edf3" }}>
                     {c.volume_total ? `${c.volume_total.toLocaleString()} USD` : "—"}
                   </td>
-                  <td className="px-4 py-3 text-right font-mono text-sm" style={{ color: "#9da7b3" }}>
+                  <td className="px-6 py-4 text-right font-medium text-sm text-gray-400">
                     {c.total_sales || "—"}
                   </td>
                 </tr>
@@ -350,10 +299,23 @@ function CollectionsTable({ navigate }) {
 
 export default function Market() {
   const navigate = useNavigate();
+  const { collections, isLoading } = useCollections("volume_total");
+
   return (
-    <div className="min-h-full">
-      <FeaturedCollections navigate={navigate} />
+    <div className="min-h-screen bg-[#03080f]">
+      {/* 1. HERO CAROUSEL: Replaces the old Featured Grid */}
+      {isLoading ? (
+        <div className="w-full h-[65vh] bg-[#0b121d] animate-pulse flex items-center justify-center">
+           <div className="text-brand font-black text-2xl animate-bounce">NYAN</div>
+        </div>
+      ) : (
+        <HeroCarousel collections={collections} navigate={navigate} />
+      )}
+
+      {/* 2. LIVE MINTS: Preserved as requested */}
       <LiveMints navigate={navigate} />
+
+      {/* 3. COLLECTIONS TABLE: Preserved as requested */}
       <CollectionsTable navigate={navigate} />
     </div>
   );
