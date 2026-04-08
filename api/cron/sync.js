@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { createPublicClient, http, parseAbiItem, defineChain } from "viem";
+import { createPublicClient, http, defineChain, parseAbiItem } from "viem";
 
 // ─── Tempo Mainnet Configuration ─────────────────────────────────────────────
 const tempoMainnet = defineChain({
@@ -16,154 +16,91 @@ const publicClient = createPublicClient({
   transport: http("https://rpc.tempo.xyz"),
 });
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const MARKETPLACE_ADDRESS = "0x218AB916fe8d7A1Ca87d7cD5Dfb1d44684Ab926b";
-const LAUNCHPAD_ADDRESS   = "0x0451929d3c5012978127A2e347d207Aa8b67f14d";
-const CHUNK_SIZE = 2000n; // Limits RPC strain per request
+// The standard ERC721 ABI for ownerOf
+const ABI = [{ 
+  name: 'ownerOf', 
+  type: 'function', 
+  inputs: [{ name: 'tokenId', type: 'uint256' }], 
+  outputs: [{ name: 'owner', type: 'address' }] 
+}];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function getDb() {
-  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-}
-
-async function getLogs({ fromBlock, toBlock, event, address }) {
-  const logs = [];
-  let from = BigInt(fromBlock);
-  const to = BigInt(toBlock);
-
-  while (from <= to) {
-    const chunkTo = from + CHUNK_SIZE - 1n < to ? from + CHUNK_SIZE - 1n : to;
-    try {
-      const chunk = await publicClient.getLogs({
-        address: address,
-        event: parseAbiItem(event),
-        fromBlock: from,
-        toBlock: chunkTo,
-      });
-      logs.push(...chunk);
-    } catch (e) {
-      console.error(`[sync] getLogs error ${from}-${chunkTo}:`, e.message);
-    }
-    from = chunkTo + 1n;
-  }
-  return logs;
-}
-
-async function ensureCollection(db, address) {
-  const { data } = await db.from("collections").select("id").eq("contract_address", address.toLowerCase()).single();
-  if (!data) {
-    await db.from("collections").insert({ 
-      contract_address: address.toLowerCase(), 
-      name: "Unknown Collection", 
-      verified: false 
-    });
-  }
-}
-
-// ─── Main Handler ─────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
+  // Only allow GET requests (or whatever you use for your Cron/Manual hit)
   if (req.method !== "GET") return res.status(405).end();
   
-  const db = getDb();
-  console.log("[sync] starting full indexer run...");
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return res.status(500).json({ error: "Missing Supabase Environment Variables" });
+  }
+
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  console.log("[sync] starting direct contract ownership scan...");
 
   try {
-    // 1. Check Sync State
-    const { data: stateRow } = await db.from("indexer_state")
-      .select("last_block")
-      .eq("contract", MARKETPLACE_ADDRESS)
-      .single();
+    // 1. Fetch collections from Supabase
+    // Make sure 'TEMPONYAW' (0x1ee82cc5946edbd88eaf90d6d3c2b5baa4f9966c) is in this table!
+    const { data: collections, error: colError } = await db
+      .from("collections")
+      .select("contract_address");
     
-    const lastBlock = BigInt(stateRow?.last_block || 0);
-    const latestBlock = await publicClient.getBlockNumber();
-
-    if (lastBlock >= latestBlock) {
-      return res.status(200).json({ ok: true, msg: "Chain is already synced." });
+    if (colError) throw colError;
+    if (!collections || collections.length === 0) {
+      return res.status(200).json({ ok: true, msg: "No collections found in Supabase. Add them to the 'collections' table first." });
     }
 
-    // CRITICAL: If lastBlock is 0, we scan from block 0 to find all 33 existing NFTs.
-    const safeFrom = lastBlock === 0n ? 0n : lastBlock + 1n;
-    let syncedCount = 0;
+    let totalUpdated = 0;
+    const errors = [];
 
-    // 2. Fetch all collections we need to track
-    const { data: collections } = await db.from("collections").select("contract_address");
-    const collectionAddrs = collections?.map(c => c.contract_address.toLowerCase()) || [];
+    // 2. Loop through each collection in your DB
+    for (const col of collections) {
+      const contractAddr = col.contract_address.toLowerCase();
+      console.log(`[sync] Scanning collection: ${contractAddr}`);
 
-    // 3. MARKETPLACE: Sold Events
-    const saleLogs = await getLogs({
-      fromBlock: safeFrom,
-      toBlock: latestBlock,
-      address: MARKETPLACE_ADDRESS,
-      event: "event Sold(address indexed nft, uint256 indexed tokenId, address seller, address buyer, uint256 price)",
-    });
+      // 3. Scan Token IDs 1 to 2000 (standard for Temponyan collections)
+      // We use a simple loop. If it hits an ID that doesn't exist, it breaks to next collection.
+      for (let tokenId = 1; tokenId <= 2000; tokenId++) {
+        try {
+          const owner = await publicClient.readContract({
+            address: contractAddr,
+            abi: ABI,
+            functionName: 'ownerOf',
+            args: [BigInt(tokenId)],
+          });
 
-    for (const log of saleLogs) {
-      const { nft, tokenId, seller, buyer, price } = log.args;
-      await db.from("sales").insert({
-        nft_contract: nft.toLowerCase(),
-        token_id: Number(tokenId),
-        seller: seller.toLowerCase(),
-        buyer: buyer.toLowerCase(),
-        price: Number(price) / 1e6,
-        tx_hash: log.transactionHash,
-        block_number: Number(log.blockNumber)
-      });
-      syncedCount++;
-    }
+          if (owner) {
+            // Upsert the owner into the 'nfts' table
+            const { error: upsertError } = await db.from("nfts").upsert({
+              contract_address: contractAddr,
+              token_id: tokenId,
+              owner_address: owner.toLowerCase(),
+              last_updated_block: 0 // Tagged as manual scan
+            }, { 
+              onConflict: 'contract_address, token_id' 
+            });
 
-    // 4. LAUNCHPAD: Minted Events
-    const mintLogs = await getLogs({
-      fromBlock: safeFrom,
-      toBlock: latestBlock,
-      address: LAUNCHPAD_ADDRESS,
-      event: "event Minted(address indexed minter, address indexed collection, uint256 quantity, uint256 pricePaid)",
-    });
-
-    for (const log of mintLogs) {
-      const { collection } = log.args;
-      await ensureCollection(db, collection.toLowerCase());
-      syncedCount++;
-    }
-
-    // 5. OWNERSHIP: Transfer Events (The 33 NFT Fix)
-    if (collectionAddrs.length > 0) {
-      const transferLogs = await getLogs({
-        fromBlock: safeFrom,
-        toBlock: latestBlock,
-        address: collectionAddrs,
-        event: "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
-      });
-
-      for (const log of transferLogs) {
-        const { to, tokenId } = log.args;
-        // This updates the 'nfts' table so the Portfolio page knows you own it
-        await db.from("nfts").upsert({
-          contract_address: log.address.toLowerCase(),
-          token_id: Number(tokenId),
-          owner_address: to.toLowerCase(),
-          last_updated_block: Number(log.blockNumber)
-        }, { onConflict: 'contract_address, token_id' });
-        
-        syncedCount++;
+            if (upsertError) console.error(`[sync] Upsert error for ID ${tokenId}:`, upsertError.message);
+            else totalUpdated++;
+          }
+        } catch (e) {
+          // ownerOf usually reverts if the token doesn't exist yet. 
+          // We log it and move to the next collection to save time.
+          console.log(`[sync] Reached end of minted tokens for ${contractAddr} at ID ${tokenId}`);
+          break; 
+        }
       }
     }
 
-    // 6. Save Progress to DB
-    await db.from("indexer_state").upsert({
-      contract: MARKETPLACE_ADDRESS,
-      last_block: Number(latestBlock),
-      updated_at: new Date().toISOString(),
-    });
-
-    console.log(`[sync] Success. Synced ${syncedCount} events up to block ${latestBlock}`);
+    // 4. Final Response
     return res.status(200).json({ 
       ok: true, 
-      synced: syncedCount, 
-      latest_block: latestBlock.toString() 
+      msg: `Scan complete. Found and updated ${totalUpdated} NFTs in Supabase.`,
+      collections_scanned: collections.length
     });
 
   } catch (err) {
-    console.error("[sync] Critical Error:", err.message);
+    console.error("[sync] Critical failure:", err.message);
     return res.status(500).json({ error: err.message });
   }
 }
