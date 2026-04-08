@@ -55,6 +55,7 @@ export default function App() {
                 <Layout>
                   <Routes>
                     <Route path="/" element={<Market />} />
+<Route path="/collection/:id/:tokenId" element={<NFTItemPage />} />
                     <Route path="/collection/:id" element={<CollectionPage />} />
                     <Route path="/nft/:tokenId" element={<NFTItemPage />} />
                     <Route path="/launchpad" element={<LaunchpadPage />} />
