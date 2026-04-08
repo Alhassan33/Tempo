@@ -2,17 +2,20 @@ import { useState } from "react";
 import { X, Tag, CheckCircle2, AlertCircle } from "lucide-react";
 import { useMarketplace } from "@/hooks/useMarketplace";
 
-export default function ListModal({ nft, onClose }) {
+// 1. Add 'contractAddress' to the props
+export default function ListModal({ nft, contractAddress, onClose }) {
   const { listNFT, loading, txStatus, clearStatus } = useMarketplace();
   const [price, setPrice] = useState("");
 
-  const NFT_CONTRACT = "0x1Ee82CC5946EdBD88eaf90D6d3c2B5baA4f9966C";
+  // 2. Remove the hardcoded NFT_CONTRACT line that was here
 
   async function handleList() {
     if (!price || isNaN(price) || Number(price) <= 0) return;
     clearStatus();
+    
+    // 3. Use the prop instead of the hardcoded variable
     await listNFT({
-      nftContract: NFT_CONTRACT,
+      nftContract: contractAddress,
       tokenId: nft.tokenId,
       price: price,
     });
@@ -24,9 +27,8 @@ export default function ListModal({ nft, onClose }) {
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(12px)" }}
       onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
-        style={{ background: "#121821", border: "1px solid rgba(34,211,238,0.15)" }}
-        onClick={(e) => e.stopPropagation()}>
+      
+      {/* ... keep the rest of your UI code exactly as it is ... */}
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b"
