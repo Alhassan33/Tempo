@@ -9,25 +9,81 @@ import ListModal from "@/components/ListModal.jsx";
 import NFTImage from "@/components/NFTImage.jsx";
 
 // ─── Minimal ERC-721 ABI for reading ownership ────────────────────────────────
-const ERC721_ABI = [
-  {
-    name: "balanceOf",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "owner", type: "address" }],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-  {
-    name: "tokenOfOwnerByIndex",
-    type: "function",
-    stateMutability: "view",
-    inputs: [
-      { name: "owner",  type: "address" },
-      { name: "index",  type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-];
+  async function fetchPortfolio() {
+    if (!address || !publicClient) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      // 1. Get collections from Supabase
+      const { data: collections, error: dbErr } = await supabase
+        .from("collections")
+        .select("contract_address, name, slug, metadata_base_uri");
+
+      if (dbErr) throw dbErr;
+      const assets = [];
+
+      await Promise.all(
+        collections.map(async (col) => {
+          if (!col.contract_address) return;
+          try {
+            // Check balance
+            const balance = await publicClient.readContract({
+              address: col.contract_address,
+              abi: ERC721_ABI,
+              functionName: "balanceOf",
+              args: [address],
+            });
+
+            if (Number(balance) === 0) return;
+
+            // Try Path A: Enumerable
+            try {
+              const ids = await Promise.all(
+                Array.from({ length: Number(balance) }, (_, i) =>
+                  publicClient.readContract({
+                    address: col.contract_address,
+                    abi: ERC721_ABI,
+                    functionName: "tokenOfOwnerByIndex",
+                    args: [address, BigInt(i)],
+                  })
+                )
+              );
+              ids.forEach(id => assets.push({ 
+                token_id: Number(id), 
+                contract_address: col.contract_address,
+                collection_name: col.name,
+                collection_slug: col.slug,
+                metadata_base_uri: col.metadata_base_uri 
+              }));
+            } catch (e) {
+              // Path B: Fallback to Supabase Sales/Owners table
+              const { data: fallbackData } = await supabase
+                .from("sales") // Or your specific 'ownership' table
+                .select("token_id")
+                .eq("nft_contract", col.contract_address.toLowerCase())
+                .eq("buyer", address.toLowerCase());
+
+              fallbackData?.forEach(f => assets.push({
+                token_id: f.token_id,
+                contract_address: col.contract_address,
+                collection_name: col.name,
+                collection_slug: col.slug,
+                metadata_base_uri: col.metadata_base_uri
+              }));
+            }
+          } catch (err) {
+            console.error("Collection fetch failed", err);
+          }
+        })
+      );
+      setOwnedNFTs(assets);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
 // ─── Individual NFT card ──────────────────────────────────────────────────────
 function PortfolioItem({ nft, view, onList }) {
