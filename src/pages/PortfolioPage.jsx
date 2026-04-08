@@ -15,19 +15,21 @@ import NFTImage from "@/components/NFTImage.jsx";
     setError(null);
 
     try {
-      // 1. Get collections from Supabase
+      // 1. Get all approved collections from your Supabase setup
       const { data: collections, error: dbErr } = await supabase
         .from("collections")
         .select("contract_address, name, slug, metadata_base_uri");
 
       if (dbErr) throw dbErr;
+      if (!collections?.length) { setOwnedNFTs([]); return; }
+
       const assets = [];
 
+      // 2. Process each collection individually to prevent total failure
       await Promise.all(
         collections.map(async (col) => {
           if (!col.contract_address) return;
           try {
-            // Check balance
             const balance = await publicClient.readContract({
               address: col.contract_address,
               abi: ERC721_ABI,
@@ -35,12 +37,13 @@ import NFTImage from "@/components/NFTImage.jsx";
               args: [address],
             });
 
-            if (Number(balance) === 0) return;
+            const count = Number(balance);
+            if (count === 0) return;
 
-            // Try Path A: Enumerable
+            // TRY PATH A: Enumerable (will fail on many modern contracts)
             try {
-              const ids = await Promise.all(
-                Array.from({ length: Number(balance) }, (_, i) =>
+              const tokenIds = await Promise.all(
+                Array.from({ length: count }, (_, i) =>
                   publicClient.readContract({
                     address: col.contract_address,
                     abi: ERC721_ABI,
@@ -49,37 +52,46 @@ import NFTImage from "@/components/NFTImage.jsx";
                   })
                 )
               );
-              ids.forEach(id => assets.push({ 
-                token_id: Number(id), 
-                contract_address: col.contract_address,
-                collection_name: col.name,
-                collection_slug: col.slug,
-                metadata_base_uri: col.metadata_base_uri 
-              }));
-            } catch (e) {
-              // Path B: Fallback to Supabase Sales/Owners table
-              const { data: fallbackData } = await supabase
-                .from("sales") // Or your specific 'ownership' table
+
+              tokenIds.forEach((id) => {
+                assets.push({
+                  token_id: Number(id),
+                  contract_address: col.contract_address,
+                  collection_name: col.name,
+                  collection_slug: col.slug,
+                  metadata_base_uri: col.metadata_base_uri,
+                });
+              });
+            } catch (enumerableErr) {
+              // TRY PATH B: Fallback to Supabase tracking
+              // Ensure you use .toLowerCase() for reliable DB matching
+              const { data: manualAssets } = await supabase
+                .from("sales") 
                 .select("token_id")
                 .eq("nft_contract", col.contract_address.toLowerCase())
                 .eq("buyer", address.toLowerCase());
 
-              fallbackData?.forEach(f => assets.push({
-                token_id: f.token_id,
-                contract_address: col.contract_address,
-                collection_name: col.name,
-                collection_slug: col.slug,
-                metadata_base_uri: col.metadata_base_uri
-              }));
+              if (manualAssets?.length) {
+                manualAssets.forEach(item => {
+                  assets.push({
+                    token_id: item.token_id,
+                    contract_address: col.contract_address,
+                    collection_name: col.name,
+                    collection_slug: col.slug,
+                    metadata_base_uri: col.metadata_base_uri,
+                  });
+                });
+              }
             }
-          } catch (err) {
-            console.error("Collection fetch failed", err);
+          } catch (e) {
+            console.error(`Skipping collection ${col.name}: Not found or error.`);
           }
         })
       );
+
       setOwnedNFTs(assets);
-    } catch (err) {
-      setError(err.message);
+    } catch (e) {
+      setError(e.message);
     } finally {
       setLoading(false);
     }
