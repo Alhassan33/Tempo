@@ -26,12 +26,7 @@ function getDb() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
-function formatPrice(raw) {
-  return Number(raw) / 1e6; // Adjust if Tempo uses different decimals
-}
-
-// Updated getLogs to accept an optional address
-async function getLogs({ fromBlock, toBlock, event, address = MARKETPLACE_ADDRESS }) {
+async function getLogs({ fromBlock, toBlock, event, address }) {
   const logs = [];
   let from = BigInt(fromBlock);
   const to = BigInt(toBlock);
@@ -54,7 +49,12 @@ async function getLogs({ fromBlock, toBlock, event, address = MARKETPLACE_ADDRES
   return logs;
 }
 
-// ... (ensureCollection and updateCollectionStats remain the same) ...
+async function ensureCollection(db, address) {
+  const { data } = await db.from("collections").select("id").eq("contract_address", address.toLowerCase()).single();
+  if (!data) {
+    await db.from("collections").insert({ contract_address: address.toLowerCase(), name: "Unknown Collection", verified: false });
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).end();
@@ -68,39 +68,90 @@ export default async function handler(req, res) {
     const lastBlock = BigInt(stateRow?.last_block || 0);
     const latestBlock = await publicClient.getBlockNumber();
 
-    if (lastBlock >= latestBlock) return res.status(200).json({ ok: true, msg: "Synced" });
+    if (lastBlock >= latestBlock) return res.status(200).json({ ok: true, msg: "Already Synced" });
 
-    const safeFrom = lastBlock === 0n ? latestBlock - 5000n : lastBlock + 1n;
-    let synced = 0;
+    // Stay within a safe range to avoid RPC timeouts
+    const safeFrom = lastBlock === 0n ? latestBlock - 2000n : lastBlock + 1n;
+    let syncedCount = 0;
 
-    // 2. MARKETPLACE EVENTS (Listed, Sale, Cancelled, PriceUpdated)
-    // [Keep your existing loops for these, just ensure getLogs uses MARKETPLACE_ADDRESS]
+    // 2. FETCH COLLECTIONS (We need these to track Transfers)
+    const { data: collections } = await db.from("collections").select("contract_address");
+    const collectionAddrs = collections?.map(c => c.contract_address.toLowerCase()) || [];
 
-    // 3. LAUNCHPAD EVENTS (Minted)
+    // 3. MARKETPLACE: Sold Events
+    const saleLogs = await getLogs({
+      fromBlock: safeFrom,
+      toBlock: latestBlock,
+      address: MARKETPLACE_ADDRESS,
+      event: "event Sold(address indexed nft, uint256 indexed tokenId, address seller, address buyer, uint256 price)",
+    });
+
+    for (const log of saleLogs) {
+      const { nft, tokenId, seller, buyer, price } = log.args;
+      await db.from("sales").insert({
+        nft_contract: nft.toLowerCase(),
+        token_id: Number(tokenId),
+        seller: seller.toLowerCase(),
+        buyer: buyer.toLowerCase(),
+        price: Number(price) / 1e6,
+        tx_hash: log.transactionHash,
+        block_number: Number(log.blockNumber)
+      });
+      syncedCount++;
+    }
+
+    // 4. LAUNCHPAD: Minted Events
     const mintLogs = await getLogs({
       fromBlock: safeFrom,
       toBlock: latestBlock,
-      address: LAUNCHPAD_ADDRESS, // Targeted address
+      address: LAUNCHPAD_ADDRESS,
       event: "event Minted(address indexed minter, address indexed collection, uint256 quantity, uint256 pricePaid)",
     });
 
     for (const log of mintLogs) {
-      const { minter, collection, quantity, pricePaid } = log.args;
-      // You might want a 'mints' table, or just update collection supply
+      const { minter, collection } = log.args;
       await ensureCollection(db, collection.toLowerCase());
-      await updateCollectionStats(db, collection.toLowerCase());
-      synced++;
+      syncedCount++;
     }
 
-    // 4. Save progress
+    // 5. OWNERSHIP: Transfer Events (The missing piece for your Portfolio)
+    if (collectionAddrs.length > 0) {
+      const transferLogs = await getLogs({
+        fromBlock: safeFrom,
+        toBlock: latestBlock,
+        address: collectionAddrs,
+        event: "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
+      });
+
+      for (const log of transferLogs) {
+        const { to, tokenId } = log.args;
+        // Update the 'nfts' table so PortfolioPage knows who owns what
+        await db.from("nfts").upsert({
+          contract_address: log.address.toLowerCase(),
+          token_id: Number(tokenId),
+          owner_address: to.toLowerCase(),
+          last_updated_block: Number(log.blockNumber)
+        }, { onConflict: 'contract_address, token_id' });
+        
+        syncedCount++;
+      }
+    }
+
+    // 6. Save Progress
     await db.from("indexer_state").upsert({
       contract: MARKETPLACE_ADDRESS,
       last_block: Number(latestBlock),
       updated_at: new Date().toISOString(),
     });
 
-    return res.status(200).json({ ok: true, synced, block: latestBlock.toString() });
+    return res.status(200).json({ 
+      ok: true, 
+      synced: syncedCount, 
+      block: latestBlock.toString() 
+    });
+
   } catch (err) {
+    console.error("[sync] error:", err.message);
     return res.status(500).json({ error: err.message });
   }
 }
