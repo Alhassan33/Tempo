@@ -10,44 +10,44 @@ import NFTImage from "@/components/NFTImage.jsx";
 
 // ─── Minimal ERC-20 ABI for reading ownership ────────────────────────────────
     async function fetchPortfolio() {
-    if (!address) return;
-    setLoading(true);
-    setError(null);
+  if (!address) return;
+  setLoading(true);
+  setError(null);
 
-    try {
-      // Direct query to our new ownership table
-      const { data, error: dbErr } = await supabase
-        .from("nfts")
-        .select(`
-          token_id, 
-          contract_address, 
-          collections (
-            name, 
-            slug, 
-            metadata_base_uri
-          )
-        `)
-        .eq("owner_address", address.toLowerCase());
+  try {
+    // Query our new ownership table and join with collections for metadata info
+    const { data, error: dbErr } = await supabase
+      .from("nfts")
+      .select(`
+        token_id, 
+        contract_address, 
+        collections (
+          name, 
+          slug, 
+          metadata_base_uri
+        )
+      `)
+      .eq("owner_address", address.toLowerCase());
 
-      if (dbErr) throw dbErr;
+    if (dbErr) throw dbErr;
 
-      // Map the data to match your component's expected format
-      const assets = data.map(item => ({
-        token_id: item.token_id,
-        contract_address: item.contract_address,
-        collection_name: item.collections?.name || "Unknown",
-        collection_slug: item.collections?.slug,
-        metadata_base_uri: item.collections?.metadata_base_uri
-      }));
+    // Map database results to the format your PortfolioItem component expects
+    const assets = (data || []).map(item => ({
+      token_id: item.token_id,
+      contract_address: item.contract_address,
+      collection_name: item.collections?.name || "Unknown",
+      collection_slug: item.collections?.slug,
+      metadata_base_uri: item.collections?.metadata_base_uri
+    }));
 
-      setOwnedNFTs(assets);
-    } catch (e) {
-      console.error("Portfolio fetch error:", e);
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+    setOwnedNFTs(assets);
+  } catch (e) {
+    console.error("Portfolio fetch error:", e);
+    setError(e.message);
+  } finally {
+    setLoading(false);
   }
+}
 
 // ─── Individual NFT card ──────────────────────────────────────────────────────
 function PortfolioItem({ nft, view, onList }) {
