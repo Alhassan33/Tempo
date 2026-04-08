@@ -51,20 +51,28 @@ export default function CollectionPage() {
   const [tokensLoading, setTokensLoading] = useState(true);
   const [tab, setTab] = useState("Items");
 
-  // Format dynamic stats from Supabase
+    // Format dynamic stats from Supabase
   const stats = useMemo(() => ({
     floor: collection?.floor_price ? `${collection.floor_price} USD` : "—",
     floorChange: collection?.floor_24h_pct ? `${collection.floor_24h_pct}%` : null,
     totalVol: collection?.total_volume ? `${collection.total_volume} USD` : "0 USD",
     vol24h: collection?.volume_24h ? `${collection.volume_24h} USD` : "0 USD",
     sales24h: collection?.sales_24h || 0,
-    owners: collection?.owners_count || 0,
-    ownerPct: collection?.total_supply ? `${((collection.owners_count / collection.total_supply) * 100).toFixed(1)}%` : null,
+    // FIX: Changed from owners_count to owners
+    owners: collection?.owners || 0, 
+    // FIX: Changed from owners_count to owners
+    ownerPct: collection?.total_supply && collection?.owners 
+      ? `${((collection.owners / collection.total_supply) * 100).toFixed(1)}%` 
+      : "0%",
     supply: collection?.total_supply?.toLocaleString() || "0",
     listed: collection?.listed_count || 0,
-    mktCap: collection?.market_cap ? `$${(collection.market_cap / 1e6).toFixed(1)}M` : "—",
+    // FIX: Market Cap logic to show real values instead of just Millions
+    mktCap: collection?.market_cap 
+      ? `${Number(collection.market_cap).toLocaleString()} USD` 
+      : "—",
     topOffer: collection?.top_offer ? `${collection.top_offer} USD` : "—",
-    royalties: collection?.royalties_bps ? `${collection.royalties_bps / 100}%` : "0%"
+    // FIX: Changed from royalties_bps to royalties and handled decimal to pct
+    royalties: collection?.royalties ? `${collection.royalties * 100}%` : "0%"
   }), [collection]);
 
   // Fetch Logic (Generic for any collection)
