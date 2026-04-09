@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCollections, useFeaturedProjects } from "../hooks/useSupabase";
+import { useMarketplace } from "../hooks/useMarketplace";
 
 function fmtTime(secs) {
   const h = String(Math.floor(secs / 3600)).padStart(2, "0");
@@ -53,7 +54,7 @@ function useCountdown(isoTime) {
   return fmtTime(secs);
 }
 
-// --- NEW HERO CAROUSEL COMPONENT ---
+// --- HERO CAROUSEL COMPONENT ---
 function HeroCarousel({ collections, navigate }) {
   const [current, setCurrent] = useState(0);
   const featured = collections.slice(0, 5);
@@ -78,10 +79,7 @@ function HeroCarousel({ collections, navigate }) {
           }`}
           onClick={() => navigate(`/collection/${c.slug}`)}
         >
-          {/* Gradient Overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-[#03080f] via-transparent to-black/20 z-20" />
-          
-          {/* Hero Image with Ken Burns Effect */}
           <img 
             src={c.banner_url || c.logo_url} 
             alt={c.name}
@@ -89,8 +87,6 @@ function HeroCarousel({ collections, navigate }) {
               i === current ? "scale-100" : "scale-110"
             }`}
           />
-
-          {/* Floating Info Box */}
           <div className="absolute bottom-16 left-6 md:left-12 z-30 fade-up">
             <h1 className="text-5xl md:text-7xl font-black mb-6 tracking-tighter uppercase italic text-white flex items-center gap-4">
               {c.name}
@@ -98,7 +94,6 @@ function HeroCarousel({ collections, navigate }) {
                 <span className="text-2xl not-italic bg-[#22d3ee] text-[#03080f] w-8 h-8 rounded-full flex items-center justify-center">✓</span>
               )}
             </h1>
-            
             <div className="flex gap-0.5 p-1 glass-morph rounded-2xl inline-flex">
               <div className="px-6 py-4">
                 <p className="text-[10px] uppercase font-bold text-gray-400 tracking-widest mb-1">Floor Price</p>
@@ -116,8 +111,6 @@ function HeroCarousel({ collections, navigate }) {
           </div>
         </div>
       ))}
-
-      {/* Slide Indicators */}
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-40 flex gap-2">
         {featured.map((_, i) => (
           <div key={i} className={`hero-indicator ${i === current ? 'hero-indicator-active' : 'w-2'}`} />
@@ -224,7 +217,6 @@ function CollectionsTable({ navigate }) {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-bold tracking-tight" style={{ color: "#e6edf3" }}>Market Rankings</h2>
       </div>
-
       <div className="rounded-2xl overflow-hidden" style={{ background: "#0b121d", border: "1px solid rgba(255,255,255,0.05)" }}>
         <table className="w-full border-collapse">
           <thead>
@@ -297,25 +289,134 @@ function CollectionsTable({ navigate }) {
   );
 }
 
+// ─── NEW: Individual NFT Listing Card ─────────────────────────────────────────
+function ListingCard({ nft, onBuy, isConnected, connectWallet }) {
+  return (
+    <div className="bg-[#0b121d] rounded-2xl p-4 border border-white/5 hover:border-cyan-400/30 transition-colors">
+      {/* Dynamic Image from Supabase join */}
+      <img 
+        src={nft.image || "/placeholder-cat.png"} 
+        alt={nft.name || `NFT #${nft.tokenId}`} 
+        className="w-full aspect-square object-cover rounded-xl mb-3" 
+      />
+      
+      {/* Dynamic Name */}
+      <h3 className="text-white font-bold truncate mb-1">
+        {nft.name || `Unidentified NFT #${nft.tokenId}`}
+      </h3>
+      
+      {/* Collection hint (if available in metadata) */}
+      {nft.metadata?.collection && (
+        <p className="text-xs text-gray-500 truncate mb-2">
+          {nft.metadata.collection}
+        </p>
+      )}
+      
+      <div className="flex justify-between items-center mt-3">
+        {/* Dynamic Price - uses displayPrice for human readable */}
+        <span className="text-cyan-400 font-mono font-bold">
+          {nft.displayPrice} USD
+        </span>
+        
+        <button 
+          onClick={() => isConnected ? onBuy(nft) : connectWallet()}
+          disabled={!isConnected}
+          className="bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-1.5 rounded-lg text-sm font-black transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isConnected ? 'BUY' : 'CONNECT'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── NEW: Recent Listings Section ─────────────────────────────────────────────
+function RecentListings({ listings, loading, buyNFT, isConnected, connectWallet }) {
+  if (loading) {
+    return (
+      <section className="px-6 py-12">
+        <h2 className="text-xl font-bold text-white mb-6">Recent Listings</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {[...Array(10)].map((_, i) => (
+            <div key={i} className="bg-[#0b121d] rounded-2xl h-72 animate-pulse border border-white/5" />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (!listings.length) {
+    return (
+      <section className="px-6 py-12">
+        <h2 className="text-xl font-bold text-white mb-6">Recent Listings</h2>
+        <div className="text-center py-12 text-gray-500">
+          No active listings found. Be the first to list an NFT!
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="px-6 py-12 fade-up">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold tracking-tight" style={{ color: "#e6edf3" }}>
+          Recent Listings
+        </h2>
+        <span className="text-sm text-gray-500">
+          {listings.length} active
+        </span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        {listings.map((nft) => (
+          <ListingCard 
+            key={nft.listingId} 
+            nft={nft} 
+            onBuy={buyNFT}
+            isConnected={isConnected}
+            connectWallet={connectWallet}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ─── MAIN MARKET PAGE ─────────────────────────────────────────────────────────
 export default function Market() {
   const navigate = useNavigate();
-  const { collections, isLoading } = useCollections("volume_total");
+  const { collections, isLoading: collectionsLoading } = useCollections("volume_total");
+  const { 
+    listings, 
+    loading: listingsLoading, 
+    buyNFT, 
+    isConnected, 
+    connectWallet 
+  } = useMarketplace();
 
   return (
     <div className="min-h-screen bg-[#03080f]">
-      {/* 1. HERO CAROUSEL: Replaces the old Featured Grid */}
-      {isLoading ? (
+      {/* 1. HERO CAROUSEL */}
+      {collectionsLoading ? (
         <div className="w-full h-[65vh] bg-[#0b121d] animate-pulse flex items-center justify-center">
-           <div className="text-brand font-black text-2xl animate-bounce">NYAN</div>
+          <div className="text-cyan-400 font-black text-2xl animate-bounce">NYAN</div>
         </div>
       ) : (
         <HeroCarousel collections={collections} navigate={navigate} />
       )}
 
-      {/* 2. LIVE MINTS: Preserved as requested */}
+      {/* 2. LIVE MINTS */}
       <LiveMints navigate={navigate} />
 
-      {/* 3. COLLECTIONS TABLE: Preserved as requested */}
+      {/* 3. RECENT LISTINGS - NEW: Uses useMarketplace */}
+      <RecentListings 
+        listings={listings}
+        loading={listingsLoading}
+        buyNFT={buyNFT}
+        isConnected={isConnected}
+        connectWallet={connectWallet}
+      />
+
+      {/* 4. COLLECTIONS TABLE */}
       <CollectionsTable navigate={navigate} />
     </div>
   );
