@@ -65,7 +65,6 @@ export function useMarketplace() {
     const LS_KEY = `tempo_listings_${chainId}`
     
     try {
-      // 1. Get total from contract (Matching your ABI: totalListings)
       const count = await clients.listings.readContract({
         address: network.marketplace, 
         abi: MARKETPLACE_ABI, 
@@ -75,7 +74,6 @@ export function useMarketplace() {
       const total = Number(count)
       if (total === 0) { setListings([]); return }
 
-      // 2. Fetch mapping details: listings(uint256)
       const accumulated = []
       for (let i = 0; i < total; i++) {
         try {
@@ -85,7 +83,6 @@ export function useMarketplace() {
             functionName: 'listings', 
             args: [BigInt(i)]
           })
-          // ABI Mapping indices: [seller, nftAddr, tokenId, price, isActive]
           if (l && l[4] === true) {
             accumulated.push({
               listingId: i.toString(),
@@ -163,8 +160,6 @@ export function useMarketplace() {
     } finally { setLoading(false) }
   }, [account, wrongNetwork, network, chainId, writeContractAsync, publicClient, fetchListings, fetchBalance])
 
-  // ─── EFFECTS ───────────────────────────────────────────────────────────────
-
   useEffect(() => {
     if (isConnected && !wrongNetwork) {
       fetchListings()
@@ -172,7 +167,15 @@ export function useMarketplace() {
     }
   }, [chainId, account, isConnected, wrongNetwork, fetchListings, fetchBalance])
 
-  // At the bottom of your file, replace the single return with these exports
+  return {
+    account, isConnected, chainId, wrongNetwork, network,
+    listings, loading, txStatus,
+    connectWallet: () => connect({ connector: injected() }),
+    disconnect, listNFT, buyNFT, fetchListings, clearStatus
+  }
+}
+
+// Helper Hooks - Must be OUTSIDE useMarketplace
 export function useListNFT() {
   const { listNFT, loading, txStatus, clearStatus } = useMarketplace();
   return { listNFT, loading, txStatus, clearStatus };
