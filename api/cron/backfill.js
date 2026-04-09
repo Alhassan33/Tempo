@@ -15,8 +15,8 @@ const publicClient = createPublicClient({
 });
 
 const NFT_CONTRACT = "0x1Ee82CC5946EdBD88eaf90D6d3C2B5baA4f9966C";
-const CHUNK_SIZE = 50000n; // How many blocks to check per RPC call
-const WINDOW_SIZE = 1000000n; // Total blocks to scan before stopping (to prevent Vercel timeout)
+const CHUNK_SIZE = 25000n; // How many blocks to check per RPC call
+const WINDOW_SIZE = 400000n; // Total blocks to scan before stopping (to prevent Vercel timeout)
 
 export default async function handler(req, res) {
   // 1. Check Security
