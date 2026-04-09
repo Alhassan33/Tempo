@@ -172,10 +172,13 @@ export function useMarketplace() {
     }
   }, [chainId, account, isConnected, wrongNetwork, fetchListings, fetchBalance])
 
-  return {
-    account, isConnected, chainId, wrongNetwork, network,
-    listings, loading, txStatus,
-    connectWallet: () => connect({ connector: injected() }),
-    disconnect, listNFT, buyNFT, fetchListings, clearStatus
-  }
+  // At the bottom of your file, replace the single return with these exports
+export function useListNFT() {
+  const { listNFT, loading, txStatus, clearStatus } = useMarketplace();
+  return { listNFT, loading, txStatus, clearStatus };
+}
+
+export function useBuyNFT() {
+  const { buyNFT, loading, txStatus, clearStatus } = useMarketplace();
+  return { buyNFT, loading, txStatus, clearStatus };
 }
