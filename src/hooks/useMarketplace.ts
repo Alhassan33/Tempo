@@ -21,7 +21,8 @@ export interface Listing {
   seller: string
   nftAddress: string
   tokenId: string
-  price: string
+  price: string           // Raw micro-USD for buyNFT BigInt ("25000000")
+  displayPrice: string    // Human-readable for UI ("25.00")
   active: boolean
   txHash: string
   blockNumber: number
@@ -65,7 +66,8 @@ export function useMarketplace() {
     seller: item.seller,
     nftAddress: item.nft_contract,
     tokenId: String(item.token_id),
-    price: String(item.price),
+    price: String(item.price),                                           // Raw: "25000000"
+    displayPrice: (Number(item.price) / 10 ** USD_DECIMALS).toFixed(2),  // Human: "25.00"
     active: item.active,
     txHash: item.tx_hash,
     blockNumber: item.block_number,
@@ -89,7 +91,6 @@ export function useMarketplace() {
       setListings(transformed)
     } catch (err) {
       console.error('Fetch listings failed:', err)
-      // Fallback: could fetch from contract here as backup
       setListings([])
     } finally {
       setLoading(false)
@@ -165,7 +166,6 @@ export function useMarketplace() {
           updated_at: new Date().toISOString(),
         }, { onConflict: 'listing_id' })
 
-        // Refresh to show new listing with metadata
         await fetchListings()
       } catch (dbErr) {
         console.warn('[listNFT] Supabase write failed:', dbErr)
@@ -187,7 +187,7 @@ export function useMarketplace() {
       setLoading(true)
       clearStatus()
       
-      const price = BigInt(listing.price)
+      const price = BigInt(listing.price)  // Uses raw micro-USD
 
       status('info', 'Step 1/2: Approving pathUSD...')
       const approveHash = await writeContractAsync({
@@ -203,7 +203,7 @@ export function useMarketplace() {
         address: network.marketplace as `0x${string}`,
         abi: MARKETPLACE_ABI,
         functionName: 'buyNFT',
-        args: [BigInt(listing.listingId)], // Now correctly typed as string
+        args: [BigInt(listing.listingId)],
       })
       await publicClient.waitForTransactionReceipt({ hash: buyHash })
 
