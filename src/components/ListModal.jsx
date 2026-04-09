@@ -1,10 +1,9 @@
 // components/ListModal.jsx
-// nft prop: { tokenId, contract, name, image, attributes, collection }
 import { useState } from "react";
-import { X, Tag, CheckCircle2, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
-import { useListNFT } from "@/hooks/useMarketplace";
+import { X, Tag, CheckCircle2, AlertCircle } from "lucide-react";
+import { useMarketplace } from "@/hooks/useMarketplace";
 
-// ─── Trait badge ──────────────────────────────────────────────────────────────
+// Trait accent colors
 const TRAIT_COLORS = [
   { color: "#22d3ee", bg: "rgba(34,211,238,0.08)",  border: "rgba(34,211,238,0.2)"  },
   { color: "#a78bfa", bg: "rgba(167,139,250,0.08)", border: "rgba(167,139,250,0.2)" },
@@ -14,64 +13,54 @@ const TRAIT_COLORS = [
   { color: "#facc15", bg: "rgba(250,204,21,0.08)",  border: "rgba(250,204,21,0.2)"  },
 ];
 
-function TraitBadge({ trait, index }) {
-  const c = TRAIT_COLORS[index % TRAIT_COLORS.length];
-  return (
-    <div className="rounded-xl p-2.5 flex flex-col gap-0.5"
-      style={{ background: c.bg, border: `1px solid ${c.border}` }}>
-      <span className="text-[9px] font-bold uppercase tracking-widest truncate"
-        style={{ color: c.color }}>
-        {trait.trait_type || "Property"}
-      </span>
-      <span className="text-xs font-bold truncate"
-        style={{ color: "#e6edf3", fontFamily: "Syne, sans-serif" }}>
-        {String(trait.value ?? "")}
-      </span>
-    </div>
-  );
-}
+function traitColor(i) { return TRAIT_COLORS[i % TRAIT_COLORS.length]; }
 
+/**
+ * nft prop shape:
+ * { tokenId, contract, name, image, attributes, collection, slug }
+ */
 export default function ListModal({ nft, onClose }) {
-  const { listNFT, step, error } = useListNFT();
-  const [price,      setPrice]      = useState("");
-  const [showTraits, setShowTraits] = useState(false);
+  const { listNFT, loading, txStatus, clearStatus } = useMarketplace();
+  const [price, setPrice] = useState("");
 
-  const traits    = nft?.attributes || [];
-  const hasTaits  = traits.length > 0;
-  const totalFee  = price ? (Number(price) * 0.025).toFixed(2) : "—";
-  const youReceive = price ? (Number(price) * 0.975).toFixed(2) : "—";
+  if (!nft) return null;
+
+  const traits = Array.isArray(nft.attributes) ? nft.attributes : [];
+  const rarityTrait = traits.find(t =>
+    t.trait_type?.toLowerCase().includes("rarity") ||
+    t.trait_type?.toLowerCase().includes("rank")
+  );
 
   async function handleList() {
     if (!price || isNaN(price) || Number(price) <= 0) return;
-    if (!nft?.contract) return;
-    await listNFT(nft.contract, BigInt(nft.tokenId), price);
+    if (!nft.contract) return;
+    clearStatus();
+    await listNFT({
+      nftContract: nft.contract,
+      tokenId:     nft.tokenId,
+      price:       price,
+    });
   }
 
-  const isLoading = step === "approving" || step === "listing";
-  const isDone    = step === "done";
-
-  const btnLabel = step === "approving" ? "Approving..."
-    : step === "listing"  ? "Listing..."
-    : "List NFT";
+  const isDone = txStatus?.type === "success";
 
   return (
     <div
       className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(12px)" }}
+      style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(12px)" }}
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl overflow-hidden shadow-2xl"
-        style={{ background: "#121821", border: "1px solid rgba(34,211,238,0.15)", maxHeight: "92vh", overflowY: "auto" }}
+        className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl overflow-hidden shadow-2xl"
+        style={{ background: "#0d1219", border: "1px solid rgba(34,211,238,0.12)", maxHeight: "92vh", overflowY: "auto" }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 sticky top-0 z-10"
-          style={{ background: "#121821", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          style={{ background: "#0d1219", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           <div className="flex items-center gap-2">
             <Tag size={14} style={{ color: "#22d3ee" }} />
-            <h2 className="text-base font-bold"
-              style={{ color: "#e6edf3", fontFamily: "Syne, sans-serif" }}>List for Sale</h2>
+            <span className="text-sm font-bold" style={{ color: "#e6edf3" }}>List for Sale</span>
           </div>
           <button onClick={onClose}
             style={{ background: "none", border: "none", cursor: "pointer", color: "#9da7b3" }}>
@@ -79,159 +68,141 @@ export default function ListModal({ nft, onClose }) {
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
-
+        <div className="p-5 space-y-5">
           {/* NFT Preview */}
-          <div className="flex items-center gap-4 p-4 rounded-2xl"
-            style={{ background: "#0b0f14", border: "1px solid rgba(255,255,255,0.04)" }}>
-            <div className="w-20 h-20 rounded-xl flex-shrink-0 overflow-hidden"
-              style={{ background: "#161d28" }}>
-              {nft?.image
-                ? <img src={nft.image} alt={nft.name} className="w-full h-full object-cover" />
-                : <div className="w-full h-full flex items-center justify-center text-2xl font-bold"
-                    style={{ color: "#22d3ee" }}>
-                    #{nft?.tokenId}
-                  </div>
-              }
+          <div className="flex gap-4">
+            <div className="w-24 h-24 rounded-2xl flex-shrink-0 overflow-hidden" style={{ background: "#161d28" }}>
+              {nft.image && (
+                <img src={nft.image} alt={nft.name} className="w-full h-full object-cover" />
+              )}
             </div>
-            <div className="min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-widest mb-1"
-                style={{ color: "#9da7b3" }}>{nft?.collection}</div>
-              <div className="font-bold text-base truncate"
-                style={{ color: "#e6edf3", fontFamily: "Syne, sans-serif" }}>
-                {nft?.name || `#${nft?.tokenId}`}
+            <div className="flex-1 min-w-0 py-1">
+              <div className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: "#22d3ee" }}>
+                {nft.collection}
               </div>
-              <div className="text-xs mt-1 font-mono" style={{ color: "#9da7b3" }}>
-                Token #{nft?.tokenId}
+              <div className="text-xl font-extrabold truncate mb-1" style={{ color: "#e6edf3" }}>
+                {nft.name || `#${nft.tokenId}`}
               </div>
+              {rarityTrait && (
+                <div className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-lg"
+                  style={{ background: "rgba(250,204,21,0.08)", border: "1px solid rgba(250,204,21,0.2)", color: "#facc15" }}>
+                  ★ {rarityTrait.trait_type}: {rarityTrait.value}
+                </div>
+              )}
             </div>
           </div>
 
           {/* Traits */}
-          {hasTaits && (
-            <div className="rounded-2xl overflow-hidden"
-              style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
-              <button
-                onClick={() => setShowTraits(s => !s)}
-                className="w-full flex items-center justify-between px-4 py-3"
-                style={{ background: "#161d28", border: "none", cursor: "pointer" }}>
-                <span className="text-xs font-bold uppercase tracking-widest"
-                  style={{ color: "#9da7b3", fontFamily: "Syne, sans-serif" }}>
-                  Traits · {traits.length}
-                </span>
-                {showTraits
-                  ? <ChevronUp size={14} style={{ color: "#9da7b3" }} />
-                  : <ChevronDown size={14} style={{ color: "#9da7b3" }} />
-                }
-              </button>
-              {showTraits && (
-                <div className="grid grid-cols-2 gap-2 p-4"
-                  style={{ background: "#0b0f14" }}>
-                  {traits.map((trait, i) => (
-                    <TraitBadge key={i} trait={trait} index={i} />
-                  ))}
+          {traits.length > 0 && (
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: "#9da7b3" }}>
+                Traits · {traits.length}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {traits.slice(0, 9).map((trait, i) => {
+                  const c = traitColor(i);
+                  return (
+                    <div key={i} className="rounded-xl p-2.5"
+                      style={{ background: c.bg, border: `1px solid ${c.border}` }}>
+                      <div className="text-[9px] font-bold uppercase truncate mb-0.5" style={{ color: c.color }}>
+                        {trait.trait_type}
+                      </div>
+                      <div className="text-xs font-bold truncate" style={{ color: "#e6edf3" }}>
+                        {String(trait.value)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {traits.length > 9 && (
+                <div className="text-xs mt-2" style={{ color: "#9da7b3" }}>
+                  +{traits.length - 9} more traits
                 </div>
               )}
             </div>
           )}
 
-          {/* Price Input */}
-          {!isDone && (
-            <>
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wide mb-2"
-                  style={{ color: "#9da7b3" }}>
-                  Listing Price (USD)
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    placeholder="0.00"
-                    value={price}
-                    onChange={e => setPrice(e.target.value)}
-                    min="0"
-                    step="0.01"
-                    className="w-full h-12 rounded-xl px-4 pr-16 text-base outline-none"
-                    style={{
-                      background: "#161d28",
-                      border: "1px solid rgba(255,255,255,0.06)",
-                      color: "#e6edf3",
-                      fontFamily: "monospace",
-                    }}
-                    onFocus={e => e.target.style.borderColor = "#22d3ee"}
-                    onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.06)"}
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold"
-                    style={{ color: "#9da7b3" }}>USD</span>
+          {/* Price input */}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wide mb-2" style={{ color: "#9da7b3" }}>
+              Listing Price (USD)
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                placeholder="Enter price..."
+                value={price}
+                onChange={e => setPrice(e.target.value)}
+                className="w-full h-14 rounded-2xl px-4 pr-20 text-xl font-mono outline-none"
+                style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.08)", color: "#e6edf3" }}
+                onFocus={e => e.target.style.borderColor = "#22d3ee"}
+                onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.08)"}
+                autoFocus
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 font-bold text-sm"
+                style={{ color: "#9da7b3" }}>USD</span>
+            </div>
+          </div>
+
+          {/* Fee breakdown */}
+          {price && Number(price) > 0 && (
+            <div className="rounded-2xl p-4 space-y-2"
+              style={{ background: "rgba(34,211,238,0.04)", border: "1px solid rgba(34,211,238,0.1)" }}>
+              {[
+                { label: "Listing Price",    value: `${Number(price).toFixed(2)} USD` },
+                { label: "Marketplace Fee",  value: `${(Number(price) * 0.025).toFixed(2)} USD (2.5%)` },
+                { label: "You Receive",      value: `${(Number(price) * 0.975).toFixed(2)} USD`, highlight: true },
+              ].map(({ label, value, highlight }) => (
+                <div key={label} className="flex justify-between text-xs">
+                  <span style={{ color: "#9da7b3" }}>{label}</span>
+                  <span className="font-mono font-bold" style={{ color: highlight ? "#22d3ee" : "#e6edf3" }}>{value}</span>
                 </div>
-              </div>
-
-              {/* Fee breakdown */}
-              <div className="rounded-xl p-3 space-y-2"
-                style={{ background: "rgba(34,211,238,0.04)", border: "1px solid rgba(34,211,238,0.1)" }}>
-                {[
-                  { label: "Listing Price",    value: price ? `${Number(price).toFixed(2)} USD` : "—" },
-                  { label: "Marketplace Fee",  value: `${totalFee} USD (2.5%)` },
-                  { label: "You Receive",      value: `${youReceive} USD` },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex justify-between text-xs">
-                    <span style={{ color: "#9da7b3" }}>{label}</span>
-                    <span className="font-mono font-semibold" style={{ color: "#e6edf3" }}>{value}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Error */}
-          {error && (
-            <div className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs"
-              style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#EF4444" }}>
-              <AlertCircle size={13} className="flex-shrink-0 mt-0.5" /> {error}
+              ))}
             </div>
           )}
 
-          {/* Success */}
+          {/* Status message */}
+          {txStatus && (
+            <div className="flex items-start gap-2 rounded-xl px-3 py-3 text-xs"
+              style={{
+                background: txStatus.type === "error" ? "rgba(239,68,68,0.1)" : txStatus.type === "success" ? "rgba(34,197,94,0.1)" : "rgba(34,211,238,0.1)",
+                border: `1px solid ${txStatus.type === "error" ? "rgba(239,68,68,0.3)" : txStatus.type === "success" ? "rgba(34,197,94,0.3)" : "rgba(34,211,238,0.3)"}`,
+                color: txStatus.type === "error" ? "#EF4444" : txStatus.type === "success" ? "#22C55E" : "#22d3ee",
+              }}>
+              <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
+              {txStatus.msg}
+            </div>
+          )}
+
+          {/* CTA */}
           {isDone ? (
-            <div className="flex flex-col items-center py-4 text-center">
+            <div className="flex flex-col items-center py-4">
               <CheckCircle2 size={40} className="mb-3" style={{ color: "#22C55E" }} />
-              <div className="font-bold text-lg mb-1"
-                style={{ color: "#e6edf3", fontFamily: "Syne, sans-serif" }}>
-                Listed Successfully!
-              </div>
-              <p className="text-sm mb-4" style={{ color: "#9da7b3" }}>
-                {nft?.name || `#${nft?.tokenId}`} is now live on the marketplace.
+              <div className="font-bold text-lg mb-1" style={{ color: "#e6edf3" }}>Listed Successfully!</div>
+              <p className="text-xs mb-5" style={{ color: "#9da7b3" }}>
+                Your NFT is now live on the marketplace.
               </p>
-              <button onClick={onClose}
-                className="w-full h-11 rounded-xl text-sm font-bold"
-                style={{ background: "rgba(34,211,238,0.1)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.3)", cursor: "pointer", fontFamily: "Syne, sans-serif" }}>
+              <button onClick={onClose} className="w-full h-12 rounded-2xl text-sm font-bold"
+                style={{ background: "rgba(34,211,238,0.1)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.3)", cursor: "pointer" }}>
                 Done
               </button>
             </div>
           ) : (
             <button
               onClick={handleList}
-              disabled={isLoading || !price || Number(price) <= 0 || !nft?.contract}
-              className="w-full h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+              disabled={loading || !price || Number(price) <= 0 || !nft.contract}
+              className="w-full h-14 rounded-2xl text-base font-bold flex items-center justify-center gap-2"
               style={{
-                background: isLoading || !price ? "#161d28" : "#22d3ee",
-                color:      isLoading || !price ? "#9da7b3" : "#0b0f14",
-                border:     "none",
-                cursor:     isLoading || !price ? "not-allowed" : "pointer",
-                fontFamily: "Syne, sans-serif",
+                background: loading || !price || Number(price) <= 0 ? "#161d28" : "#22d3ee",
+                color:      loading || !price || Number(price) <= 0 ? "#9da7b3" : "#0b0f14",
+                border: "none",
+                cursor: loading || !price || Number(price) <= 0 ? "not-allowed" : "pointer",
               }}>
-              {isLoading && (
-                <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              {loading && (
+                <span className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
               )}
-              {btnLabel}
+              {loading ? txStatus?.msg || "Confirming..." : `List for ${price ? `${Number(price).toFixed(2)} USD` : "..."}`}
             </button>
-          )}
-
-          {/* Info note */}
-          {!isDone && (
-            <p className="text-[10px] text-center" style={{ color: "#9da7b3" }}>
-              Listing requires 2 transactions: approve NFT transfer, then confirm listing.
-            </p>
           )}
         </div>
       </div>
