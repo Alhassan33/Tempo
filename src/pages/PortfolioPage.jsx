@@ -1,116 +1,94 @@
-import { useEffect, useState } from "react";
-import { Briefcase, Search, LayoutGrid, List, RefreshCw, Wallet } from "lucide-react";
-import { useAccount, usePublicClient } from "wagmi";
+// pages/PortfolioPage.jsx
+// Reads from the `nfts` table populated by the indexer.
+// One fast Supabase query instead of 2000 on-chain calls.
+
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAccount } from "wagmi";
+import {
+  Briefcase, Search, LayoutGrid, List,
+  RefreshCw, Wallet, Tag, ExternalLink
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useNFTMetadata } from "@/hooks/useNFTMetadata";
 import { CardSkeleton } from "@/components/Skeleton.jsx";
 import ListModal from "@/components/ListModal.jsx";
 import NFTImage from "@/components/NFTImage.jsx";
 
-// ─── Minimal ERC-20 ABI for reading ownership ────────────────────────────────
-    async function fetchPortfolio() {
-  if (!address) return;
-  setLoading(true);
-  setError(null);
-
-  try {
-    // Query our new ownership table and join with collections for metadata info
-    const { data, error: dbErr } = await supabase
-      .from("nfts")
-      .select(`
-        token_id, 
-        contract_address, 
-        collections (
-          name, 
-          slug, 
-          metadata_base_uri
-        )
-      `)
-      .eq("owner_address", address.toLowerCase());
-
-    if (dbErr) throw dbErr;
-
-    // Map database results to the format your PortfolioItem component expects
-    const assets = (data || []).map(item => ({
-      token_id: item.token_id,
-      contract_address: item.contract_address,
-      collection_name: item.collections?.name || "Unknown",
-      collection_slug: item.collections?.slug,
-      metadata_base_uri: item.collections?.metadata_base_uri
-    }));
-
-    setOwnedNFTs(assets);
-  } catch (e) {
-    console.error("Portfolio fetch error:", e);
-    setError(e.message);
-  } finally {
-    setLoading(false);
-  }
-}
-
-// ─── Individual NFT card ──────────────────────────────────────────────────────
-function PortfolioItem({ nft, view, onList }) {
+// ─── Single NFT card ──────────────────────────────────────────────────────────
+function NFTCard({ nft, view, onList }) {
   const navigate = useNavigate();
-  const { metadata, loading } = useNFTMetadata(
-    nft.contract_address,
-    nft.token_id,
-    nft.metadata_base_uri
-  );
+  // Uses collection's metadata_base_uri from the joined collections row
+  const { metadata, loading } = useNFTMetadata(nft.token_id, nft.collections?.metadata_base_uri);
 
-  function handleClick() {
-    navigate(`/collection/${nft.collection_slug}/${nft.token_id}`);
+  function goToItem() {
+    navigate(`/nft/${nft.token_id}?contract=${nft.contract_address}`);
   }
 
   if (view === "list") {
     return (
-      <div onClick={handleClick}
-        className="flex items-center gap-4 p-3 rounded-2xl cursor-pointer transition-all card-hover"
-        style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}>
+      <div
+        onClick={goToItem}
+        className="flex items-center gap-4 p-3 rounded-2xl cursor-pointer transition-all"
+        style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}
+        onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(34,211,238,0.2)"}
+        onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"}
+      >
         <div className="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden" style={{ background: "#161d28" }}>
-          <NFTImage src={metadata?.image} className="w-full h-full object-cover" />
+          {loading
+            ? <div className="w-full h-full animate-pulse" style={{ background: "#1a2232" }} />
+            : <NFTImage src={metadata?.image} alt={metadata?.name} className="w-full h-full object-cover" />
+          }
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "#22d3ee" }}>
-            {nft.collection_name}
+            {nft.collections?.name || nft.contract_address.slice(0, 8)}
           </div>
           <div className="text-sm font-bold truncate" style={{ color: "#e6edf3" }}>
-            {metadata?.name || `#${nft.token_id}`}
+            {loading ? `#${nft.token_id}` : (metadata?.name || `#${nft.token_id}`)}
           </div>
         </div>
-        <button onClick={e => { e.stopPropagation(); onList(nft, metadata); }}
-          className="px-4 py-1.5 rounded-xl text-xs font-bold transition-all"
-          style={{ background: "rgba(34,211,238,0.1)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.2)", cursor: "pointer" }}>
-          List
+        <button
+          onClick={e => { e.stopPropagation(); onList(nft, metadata); }}
+          className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 flex-shrink-0"
+          style={{ background: "rgba(34,211,238,0.08)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.2)", cursor: "pointer", fontFamily: "Syne, sans-serif" }}>
+          <Tag size={10} /> List
         </button>
       </div>
     );
   }
 
   return (
-    <div onClick={handleClick}
-      className="group relative rounded-2xl overflow-hidden cursor-pointer transition-all card-hover p-2"
-      style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}>
-      <div className="aspect-square rounded-xl overflow-hidden mb-3 relative" style={{ background: "#161d28" }}>
-        <NFTImage src={metadata?.image} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" style={{ objectFit: "cover" }} />
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.3)", backdropFilter: "blur(4px)" }}>
-            <RefreshCw className="animate-spin" size={20} style={{ color: "#22d3ee" }} />
-          </div>
-        )}
+    <div
+      onClick={goToItem}
+      className="group rounded-2xl overflow-hidden cursor-pointer transition-all"
+      style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(34,211,238,0.2)"}
+      onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"}
+    >
+      <div className="aspect-square overflow-hidden relative" style={{ background: "#161d28" }}>
+        {loading
+          ? <div className="w-full h-full animate-pulse" style={{ background: "#1a2232" }} />
+          : <NFTImage
+              src={metadata?.image}
+              alt={metadata?.name}
+              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            />
+        }
       </div>
-      <div className="px-2 pb-2">
+      <div className="p-3">
         <div className="text-[9px] font-bold uppercase tracking-widest mb-1 truncate" style={{ color: "#9da7b3" }}>
-          {nft.collection_name}
+          {nft.collections?.name || nft.contract_address.slice(0, 10)}
         </div>
         <div className="flex items-center justify-between gap-2">
-          <div className="text-sm font-bold truncate transition-colors" style={{ color: "#e6edf3" }}>
-            {metadata?.name || `#${nft.token_id}`}
+          <div className="text-sm font-bold truncate" style={{ color: "#e6edf3" }}>
+            {loading ? `#${nft.token_id}` : (metadata?.name || `#${nft.token_id}`)}
           </div>
-          <button onClick={e => { e.stopPropagation(); onList(nft, metadata); }}
-            className="text-[10px] px-2 py-1 rounded-lg font-bold transition-all flex-shrink-0"
-            style={{ background: "rgba(255,255,255,0.05)", color: "#9da7b3", border: "none", cursor: "pointer" }}>
-            LIST
+          <button
+            onClick={e => { e.stopPropagation(); onList(nft, metadata); }}
+            className="text-[10px] px-2 py-1 rounded-lg font-bold flex-shrink-0"
+            style={{ background: "rgba(34,211,238,0.08)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.15)", cursor: "pointer", fontFamily: "Syne, sans-serif" }}>
+            List
           </button>
         </div>
       </div>
@@ -118,165 +96,138 @@ function PortfolioItem({ nft, view, onList }) {
   );
 }
 
-// ─── Main Portfolio Page ──────────────────────────────────────────────────────
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PortfolioPage() {
   const { address, isConnected } = useAccount();
-  const publicClient = usePublicClient();
-  const [ownedNFTs,  setOwnedNFTs]  = useState([]);
-  const [loading,    setLoading]    = useState(false);
-  const [view,       setView]       = useState("grid");
-  const [search,     setSearch]     = useState("");
-  const [listModal,  setListModal]  = useState(null);
-  const [error,      setError]      = useState(null);
+  const [ownedNFTs, setOwnedNFTs] = useState([]);
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState(null);
+  const [view,      setView]      = useState("grid");
+  const [search,    setSearch]    = useState("");
+  const [listModal, setListModal] = useState(null);
 
-  async function fetchPortfolio() {
-    if (!address || !publicClient) return;
+  const fetchPortfolio = useCallback(async () => {
+    if (!address) return;
     setLoading(true);
     setError(null);
 
     try {
-      // 1. Get all approved collections from Supabase
-      const { data: collections, error: dbErr } = await supabase
-        .from("collections")
-        .select("contract_address, name, slug, metadata_base_uri, total_supply");
+      // Single fast query — indexer already did the hard work
+      // Join collections so we get metadata_base_uri and name
+      const { data, error: dbErr } = await supabase
+        .from("nfts")
+        .select(`
+          token_id,
+          contract_address,
+          last_updated_block,
+          collections (
+            name,
+            slug,
+            metadata_base_uri,
+            total_supply
+          )
+        `)
+        .eq("owner_address", address.toLowerCase())
+        .neq("owner_address", "0x0000000000000000000000000000000000000000")
+        .order("token_id", { ascending: true });
 
       if (dbErr) throw dbErr;
-      if (!collections?.length) { setOwnedNFTs([]); return; }
-
-      const assets = [];
-
-      // 2. For each collection, check how many NFTs this wallet owns
-      await Promise.all(
-        collections.map(async (col) => {
-          if (!col.contract_address) return;
-          try {
-            // Check balance
-            const balance = await publicClient.readContract({
-              address: col.contract_address,
-              abi: ERC721_ABI,
-              functionName: "balanceOf",
-              args: [address],
-            });
-
-            const count = Number(balance);
-            if (count === 0) return;
-
-            // Get each token ID owned by this wallet
-            const tokenIds = await Promise.all(
-              Array.from({ length: count }, (_, i) =>
-                publicClient.readContract({
-                  address: col.contract_address,
-                  abi: ERC721_ABI,
-                  functionName: "tokenOfOwnerByIndex",
-                  args: [address, BigInt(i)],
-                }).then(id => Number(id)).catch(() => null)
-              )
-            );
-
-            tokenIds.filter(Boolean).forEach((tokenId) => {
-              assets.push({
-                token_id:          tokenId,
-                contract_address:  col.contract_address,
-                collection_name:   col.name,
-                collection_slug:   col.slug,
-                metadata_base_uri: col.metadata_base_uri,
-              });
-            });
-          } catch (e) {
-            // Contract may not support tokenOfOwnerByIndex (not enumerable)
-            // Fall back to checking Transfer events from Supabase sales table
-            try {
-              const { data: purchases } = await supabase
-                .from("sales")
-                .select("token_id")
-                .eq("nft_contract", col.contract_address.toLowerCase())
-                .eq("buyer", address.toLowerCase());
-
-              (purchases || []).forEach(({ token_id }) => {
-                assets.push({
-                  token_id,
-                  contract_address:  col.contract_address,
-                  collection_name:   col.name,
-                  collection_slug:   col.slug,
-                  metadata_base_uri: col.metadata_base_uri,
-                });
-              });
-            } catch {}
-          }
-        })
-      );
-
-      setOwnedNFTs(assets);
+      setOwnedNFTs(data || []);
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }
+  }, [address]);
 
   useEffect(() => {
     if (isConnected && address) fetchPortfolio();
-  }, [address, isConnected]);
+  }, [address, isConnected, fetchPortfolio]);
 
-  const filtered = ownedNFTs.filter(n =>
-    n.collection_name?.toLowerCase().includes(search.toLowerCase()) ||
-    n.token_id?.toString().includes(search)
-  );
+  const filtered = ownedNFTs.filter(n => {
+    if (!search) return true;
+    const name = n.collections?.name?.toLowerCase() || "";
+    return name.includes(search.toLowerCase()) || String(n.token_id).includes(search);
+  });
 
+  // ── Not connected ─────────────────────────────────────────────────────────
   if (!isConnected) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 fade-up">
-        <div className="w-20 h-20 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.04)" }}>
+        <div className="w-20 h-20 rounded-full flex items-center justify-center"
+          style={{ background: "rgba(255,255,255,0.04)" }}>
           <Wallet size={40} style={{ color: "#9da7b3" }} />
         </div>
         <div className="text-center">
-          <h1 className="text-2xl font-black text-white uppercase" style={{ color: "#e6edf3" }}>Wallet Not Connected</h1>
-          <p className="text-sm mt-1" style={{ color: "#9da7b3" }}>Connect your wallet to view your Tempo chain NFTs.</p>
+          <h1 className="text-2xl font-extrabold mb-1"
+            style={{ color: "#e6edf3", fontFamily: "Syne, sans-serif" }}>
+            Connect Wallet
+          </h1>
+          <p className="text-sm" style={{ color: "#9da7b3" }}>
+            Connect your wallet to view your NFTs on Tempo Chain.
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="px-6 py-8 max-w-7xl mx-auto fade-up">
+    <div className="px-4 sm:px-6 py-8 max-w-7xl mx-auto fade-up">
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-8">
         <div>
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-2">
             <Briefcase size={14} style={{ color: "#22d3ee" }} />
-            <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "#22d3ee" }}>Portfolio</span>
+            <span className="text-xs font-bold uppercase tracking-widest"
+              style={{ color: "#22d3ee", fontFamily: "Syne, sans-serif" }}>
+              Portfolio
+            </span>
           </div>
-          <h1 className="text-3xl font-black uppercase" style={{ color: "#e6edf3" }}>My NFTs</h1>
-          <p className="mt-1 text-xs font-mono" style={{ color: "#9da7b3" }}>{address}</p>
+          <h1 className="text-3xl font-extrabold uppercase"
+            style={{ color: "#e6edf3", fontFamily: "Syne, sans-serif" }}>
+            My NFTs
+          </h1>
+          <p className="mt-1 text-xs font-mono" style={{ color: "#9da7b3" }}>
+            {address}
+          </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Refresh */}
-          <button onClick={fetchPortfolio} disabled={loading}
-            className="h-11 w-11 rounded-xl flex items-center justify-center transition-colors"
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchPortfolio}
+            disabled={loading}
+            className="h-10 w-10 rounded-xl flex items-center justify-center"
             style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)", color: "#9da7b3", cursor: "pointer" }}>
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           </button>
 
-          {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={14} style={{ color: "#9da7b3" }} />
-            <input type="text" placeholder="Search by name or ID..."
-              value={search} onChange={e => setSearch(e.target.value)}
-              className="h-11 w-56 pl-9 pr-4 rounded-xl text-sm outline-none"
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" size={13}
+              style={{ color: "#9da7b3" }} />
+            <input
+              type="text"
+              placeholder="Search by name or ID..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="h-10 w-48 sm:w-56 pl-8 pr-3 rounded-xl text-sm outline-none"
               style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)", color: "#e6edf3" }}
               onFocus={e => e.target.style.borderColor = "#22d3ee"}
-              onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.06)"} />
+              onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.06)"}
+            />
           </div>
 
-          {/* View toggle */}
-          <div className="flex rounded-xl p-1" style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)" }}>
+          <div className="flex rounded-xl p-1"
+            style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)" }}>
             {[{ v: "grid", Icon: LayoutGrid }, { v: "list", Icon: List }].map(({ v, Icon }) => (
               <button key={v} onClick={() => setView(v)}
-                className="p-2 rounded-lg transition-colors"
-                style={{ background: view === v ? "rgba(255,255,255,0.1)" : "none", color: view === v ? "#e6edf3" : "#9da7b3", border: "none", cursor: "pointer" }}>
-                <Icon size={16} />
+                className="p-2 rounded-lg"
+                style={{
+                  background: view === v ? "rgba(34,211,238,0.1)" : "none",
+                  color: view === v ? "#22d3ee" : "#9da7b3",
+                  border: "none", cursor: "pointer",
+                }}>
+                <Icon size={15} />
               </button>
             ))}
           </div>
@@ -285,15 +236,21 @@ export default function PortfolioPage() {
 
       {/* Stats bar */}
       {!loading && ownedNFTs.length > 0 && (
-        <div className="flex items-center gap-6 mb-6 p-4 rounded-2xl"
+        <div className="flex items-center gap-6 p-4 rounded-2xl mb-6"
           style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}>
           <div>
-            <div className="text-[10px] uppercase tracking-wide mb-0.5" style={{ color: "#9da7b3" }}>Total NFTs</div>
-            <div className="font-mono font-bold" style={{ color: "#e6edf3" }}>{ownedNFTs.length}</div>
+            <div className="text-[10px] uppercase tracking-wide mb-0.5" style={{ color: "#9da7b3" }}>
+              Total NFTs
+            </div>
+            <div className="font-mono font-bold text-lg" style={{ color: "#e6edf3" }}>
+              {ownedNFTs.length}
+            </div>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wide mb-0.5" style={{ color: "#9da7b3" }}>Collections</div>
-            <div className="font-mono font-bold" style={{ color: "#e6edf3" }}>
+            <div className="text-[10px] uppercase tracking-wide mb-0.5" style={{ color: "#9da7b3" }}>
+              Collections
+            </div>
+            <div className="font-mono font-bold text-lg" style={{ color: "#e6edf3" }}>
               {new Set(ownedNFTs.map(n => n.contract_address)).size}
             </div>
           </div>
@@ -318,7 +275,7 @@ export default function PortfolioPage() {
           ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4"
           : "space-y-2"}>
           {filtered.map((nft, idx) => (
-            <PortfolioItem
+            <NFTCard
               key={`${nft.contract_address}-${nft.token_id}-${idx}`}
               nft={nft}
               view={view}
@@ -327,7 +284,7 @@ export default function PortfolioPage() {
                 contract:   nft.contract_address,
                 name:       meta?.name || `#${nft.token_id}`,
                 image:      meta?.image,
-                collection: nft.collection_name,
+                collection: nft.collections?.name,
               })}
             />
           ))}
@@ -335,10 +292,16 @@ export default function PortfolioPage() {
       ) : (
         <div className="py-24 text-center rounded-3xl"
           style={{ border: "1px dashed rgba(255,255,255,0.06)" }}>
-          <div className="text-4xl mb-3">🎨</div>
-          <div className="font-bold mb-1" style={{ color: "#e6edf3" }}>No NFTs found</div>
+          <div className="text-5xl mb-4">🎨</div>
+          <div className="font-bold text-lg mb-2"
+            style={{ color: "#e6edf3", fontFamily: "Syne, sans-serif" }}>
+            No NFTs found
+          </div>
+          <p className="text-sm mb-1" style={{ color: "#9da7b3" }}>
+            Your wallet doesn't hold any NFTs from supported collections yet.
+          </p>
           <p className="text-xs" style={{ color: "#9da7b3" }}>
-            No NFTs from supported Tempo collections found in this wallet.
+            If you just minted or bought, wait for the indexer to sync (runs every minute).
           </p>
         </div>
       )}
