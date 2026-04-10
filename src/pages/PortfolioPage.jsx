@@ -1,397 +1,240 @@
-// pages/PortfolioPage.jsx
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAccount } from "wagmi";
-import { Briefcase, Search, LayoutGrid, List, RefreshCw, Wallet, Tag, X } from "lucide-react";
-import { supabase } from "@/lib/supabase";
-import { fetchTokenMetadata } from "@/hooks/useNFTMetadata";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useParams, Link } from "react-router-dom";
+import { CheckCircle2, ExternalLink, Twitter, Globe, TrendingDown, TrendingUp } from "lucide-react";
+import { useCollection, useRealtimeListings } from "@/hooks/useSupabase";
+import NFTImage from "@/components/NFTImage.jsx";
 import { CardSkeleton } from "@/components/Skeleton.jsx";
-import ListModal from "@/components/ListModal.jsx";
-import DelistModal from "@/components/DelistModal.jsx";
+import { extractImageUrl } from "@/utils/nftImageUtils.js";
+import ActivityFeed from "@/components/ActivityFeed.jsx";
 
-const TABS = ["All", "Listed", "Unlisted"];
+const TABS = ["Items", "Activity", "Bids", "Analytics"];
+const EXPLORER_BASE = "https://explore.tempo.xyz";
+const PAGE_SIZE = 50;
 
-// ─── NFT Card ─────────────────────────────────────────────────────────────────
-function NFTCard({ nft, view, onList, onDelist }) {
-  const navigate  = useNavigate();
-  const imgSrc    = nft.metadata?.image || nft.image || null;
-  const tokenName = nft.metadata?.name  || nft.name  || `#${nft.token_id}`;
-  const isListed  = !!nft.listing;
-
-  // ✅ Fixed navigation
-  function goToItem() {
-    if (nft.collection_slug) {
-      navigate(`/collection/${nft.collection_slug}/${nft.token_id}`);
-    }
-  }
-
-  if (view === "list") {
-    return (
-      <div onClick={goToItem}
-        className="flex items-center gap-4 p-3 rounded-2xl cursor-pointer transition-all card-hover"
-        style={{ background: "#121821", border: isListed ? "1px solid rgba(34,211,238,0.25)" : "1px solid rgba(255,255,255,0.06)" }}>
-        <div className="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden" style={{ background: "#161d28" }}>
-          {imgSrc
-            ? <img src={imgSrc} alt={tokenName} className="w-full h-full object-cover" />
-            : <div className="w-full h-full animate-pulse" style={{ background: "#1a2232" }} />}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <div className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#22d3ee" }}>
-              {nft.collection_name}
-            </div>
-            {isListed && (
-              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                style={{ background: "rgba(34,211,238,0.12)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.3)" }}>
-                LISTED
-              </span>
-            )}
-          </div>
-          <div className="text-sm font-bold truncate" style={{ color: "#e6edf3" }}>{tokenName}</div>
-          {isListed && (
-            <div className="text-xs font-mono mt-0.5" style={{ color: "#22d3ee" }}>
-              {Number(nft.listing.price).toFixed(2)} USD
-            </div>
-          )}
-        </div>
-        {isListed ? (
-          <button onClick={e => { e.stopPropagation(); onDelist(nft); }}
-            className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 flex-shrink-0"
-            style={{ background: "rgba(239,68,68,0.08)", color: "#EF4444", border: "1px solid rgba(239,68,68,0.2)", cursor: "pointer" }}>
-            <X size={10} /> Delist
-          </button>
-        ) : (
-          <button onClick={e => { e.stopPropagation(); onList(nft); }}
-            className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 flex-shrink-0"
-            style={{ background: "rgba(34,211,238,0.08)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.2)", cursor: "pointer" }}>
-            <Tag size={10} /> List
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div onClick={goToItem}
-      className="group rounded-2xl overflow-hidden cursor-pointer transition-all relative card-hover"
-      style={{ background: "#121821", border: isListed ? "1px solid rgba(34,211,238,0.25)" : "1px solid rgba(255,255,255,0.06)" }}>
-      {isListed && (
-        <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded-lg text-[9px] font-bold"
-          style={{ background: "rgba(11,15,20,0.85)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.4)", backdropFilter: "blur(4px)" }}>
-          ● LISTED
+// ─── Stat Card ────────────────────────────────────────────────────────────────
+const StatItem = ({ label, value, subValue, isTrend }) => (
+  <div className="rounded-2xl p-4" style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.05)" }}>
+    <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#9da7b3" }}>{label}</div>
+    <div className="flex items-baseline gap-2">
+      <div className="font-mono text-lg font-bold" style={{ color: "#e6edf3" }}>{value}</div>
+      {subValue && (
+        <div className={`text-[11px] font-bold flex items-center gap-0.5 ${
+          isTrend ? (subValue.includes('-') ? 'text-red-400' : 'text-green-400') : ''
+        }`} style={!isTrend ? { color: "#9da7b3" } : {}}>
+          {isTrend && (subValue.includes('-') ? <TrendingDown size={11} /> : <TrendingUp size={11} />)}
+          {subValue}
         </div>
       )}
+    </div>
+  </div>
+);
 
-      <div className="aspect-square overflow-hidden" style={{ background: "#161d28" }}>
-        {imgSrc
-          ? <img src={imgSrc} alt={tokenName}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-          : <div className="w-full h-full animate-pulse" style={{ background: "#1a2232" }} />}
-      </div>
-
-      <div className="p-3">
-        <div className="text-[9px] font-bold uppercase tracking-widest mb-1 truncate" style={{ color: "#9da7b3" }}>
-          {nft.collection_name}
-        </div>
-        <div className="font-bold text-sm truncate mb-1" style={{ color: "#e6edf3" }}>{tokenName}</div>
-
-        {isListed ? (
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-sm font-bold" style={{ color: "#22d3ee" }}>
-              {Number(nft.listing.price).toFixed(2)} USD
-            </span>
-            <button onClick={e => { e.stopPropagation(); onDelist(nft); }}
-              className="text-[10px] px-2 py-1 rounded-lg font-bold flex-shrink-0 flex items-center gap-1"
-              style={{ background: "rgba(239,68,68,0.08)", color: "#EF4444", border: "1px solid rgba(239,68,68,0.2)", cursor: "pointer" }}>
-              <X size={9} /> Delist
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between">
-            <span className="text-xs" style={{ color: "#9da7b3" }}>Not listed</span>
-            <button onClick={e => { e.stopPropagation(); onList(nft); }}
-              className="text-[10px] px-2 py-1 rounded-lg font-bold flex-shrink-0"
-              style={{ background: "rgba(34,211,238,0.08)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.15)", cursor: "pointer" }}>
-              List
-            </button>
+// ─── NFT Grid Item ────────────────────────────────────────────────────────────
+function NFTGridItem({ token, collectionName, slug, listing }) {
+  return (
+    <Link
+      to={`/collection/${slug}/${token.tokenId}`}
+      className="block rounded-2xl overflow-hidden card-hover p-2"
+      style={{ 
+        background: "#121821", 
+        border: listing ? "1px solid rgba(34,211,238,0.3)" : "1px solid rgba(255,255,255,0.05)",
+        boxShadow: listing ? "0 0 15px rgba(34,211,238,0.05)" : "none"
+      }}>
+      <div className="relative">
+        <NFTImage src={token.image} className="aspect-square rounded-xl object-cover mb-2 w-full" />
+        {listing && (
+          <div className="absolute top-2 left-2 text-[9px] font-bold px-2 py-0.5 rounded-lg"
+            style={{ background: "rgba(11,15,20,0.85)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.4)", backdropFilter: "blur(4px)" }}>
+            ● FOR SALE
           </div>
         )}
       </div>
-    </div>
+      <div className="px-1 pb-1">
+        <div className="text-[10px] font-bold uppercase tracking-tight mb-0.5 truncate" style={{ color: "#9da7b3" }}>
+          {collectionName}
+        </div>
+        <div className="text-sm font-bold truncate" style={{ color: "#e6edf3" }}>{token.name}</div>
+        {listing && (
+          <div className="font-mono text-xs font-bold mt-0.5" style={{ color: "#22d3ee" }}>
+            {Number(listing.price).toFixed(2)} USD
+          </div>
+        )}
+      </div>
+    </Link>
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-export default function PortfolioPage() {
-  const { address, isConnected } = useAccount();
-  const [ownedNFTs,   setOwnedNFTs]   = useState([]);
-  const [loading,     setLoading]     = useState(false);
-  const [metaLoading, setMetaLoading] = useState(false);
-  const [error,       setError]       = useState(null);
-  const [view,        setView]        = useState("grid");
-  const [search,      setSearch]      = useState("");
-  const [tab,         setTab]         = useState("All");
-  const [listModal,   setListModal]   = useState(null);
-  const [delistModal, setDelistModal] = useState(null);
+export default function CollectionPage() {
+  const { id } = useParams();
+  const { collection, isLoading: colLoading } = useCollection(id);
+  const { listings } = useRealtimeListings(collection?.contract_address);
 
-  const fetchPortfolio = useCallback(async () => {
-    if (!address) return;
-    setLoading(true);
-    setError(null);
+  // ✅ HOISTING LOGIC: Extract active listings and create a Set for fast exclusion
+  const activeListings = useMemo(() => {
+    return (listings || []).filter(l => l.active).sort((a, b) => a.price - b.price);
+  }, [listings]);
 
-    try {
-      // 1. Get owned NFTs from indexed table (case-insensitive)
-      const { data: nftRows, error: nftErr } = await supabase
-        .from("nfts")
-        .select("token_id, contract_address, name, image, metadata_url")
-        .ilike("owner_address", address)
-        .neq("owner_address", "0x0000000000000000000000000000000000000000")
-        .order("token_id", { ascending: true });
+  const listedIds = useMemo(() => new Set(activeListings.map(l => String(l.token_id))), [activeListings]);
 
-      if (nftErr) throw nftErr;
-      if (!nftRows?.length) { setOwnedNFTs([]); setLoading(false); return; }
+  const [unlistedTokens, setUnlistedTokens] = useState([]);
+  const [tokensLoading, setTokensLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [tab, setTab] = useState("Items");
+  const loaderRef = useRef(null);
 
-      // 2. Get collection info
-      const contracts = [...new Set(nftRows.map(n => n.contract_address))];
-      const { data: colRows } = await supabase
-        .from("collections")
-        .select("contract_address, name, slug, metadata_base_uri")
-        .in("contract_address", contracts);
-      const colMap = {};
-      (colRows || []).forEach(c => { colMap[c.contract_address?.toLowerCase()] = c; });
+  const stats = useMemo(() => {
+    const supply = collection?.total_supply || 0;
+    const listed = activeListings.length;
+    const royaltyBps = collection?.royalty_bps ?? 0;
+    return {
+      floor: collection?.floor_price ? `${Number(collection.floor_price).toFixed(2)} USD` : "—",
+      topOffer: collection?.top_offer ? `${Number(collection.top_offer).toFixed(2)} USD` : "—",
+      vol24h: collection?.volume_24h ? `${Number(collection.volume_24h).toFixed(2)} USD` : "0 USD",
+      totalVol: collection?.volume_total ? `${Number(collection.volume_total).toFixed(2)} USD` : "0 USD",
+      mktCap: collection?.floor_price && supply ? `${(Number(collection.floor_price) * supply).toLocaleString()} USD` : "—",
+      owners: collection?.owners || 0,
+      ownerPct: supply ? `${((collection.owners / supply) * 100).toFixed(1)}%` : "0%",
+      listed,
+      listedPct: supply ? `${((listed / supply) * 100).toFixed(1)}% listed` : "",
+      supply: supply.toLocaleString(),
+      royalties: royaltyBps ? `${(royaltyBps / 100).toFixed(1)}%` : "0%",
+    };
+  }, [collection, activeListings]);
 
-      // 3. Get active listings for this wallet
-      const { data: listingRows } = await supabase
-        .from("listings")
-        .select("token_id, nft_contract, listing_id, price")
-        .ilike("seller", address)
-        .eq("active", true);
+  const fetchPage = useCallback(async (pageNum) => {
+    if (!collection?.metadata_base_uri) return;
+    let base = collection.metadata_base_uri;
+    if (base.startsWith("ipfs://")) base = base.replace("ipfs://", "https://gateway.lighthouse.storage/ipfs/");
+    if (!base.endsWith("/")) base += "/";
 
-      const listingMap = {};
-      (listingRows || []).forEach(l => {
-        listingMap[`${l.nft_contract?.toLowerCase()}:${l.token_id}`] = l;
-      });
+    const supply = collection.total_supply || 2000;
+    const start = (pageNum - 1) * PAGE_SIZE + 1;
+    const end = Math.min(start + PAGE_SIZE - 1, supply);
 
-      // 4. Merge
-      const enriched = nftRows.map(nft => {
-        const col = colMap[nft.contract_address?.toLowerCase()];
-        const listingKey = `${nft.contract_address?.toLowerCase()}:${nft.token_id}`;
-        return {
-          ...nft,
-          collection_name:   col?.name || nft.contract_address?.slice(0, 8),
-          collection_slug:   col?.slug,
-          metadata_base_uri: col?.metadata_base_uri || null,
-          listing:           listingMap[listingKey] || null,
-          metadata:          null,
-        };
-      });
+    if (start > supply) { setHasMore(false); return; }
 
-      setOwnedNFTs(enriched);
-      setLoading(false);
+    setTokensLoading(true);
+    const ids = Array.from({ length: end - start + 1 }, (_, i) => start + i);
 
-      // 5. Stream metadata for NFTs without images
-      const needsMeta = enriched.filter(n => !n.image && n.metadata_base_uri);
-      if (!needsMeta.length) return;
+    const results = await Promise.all(ids.map(async (tokenId) => {
+      const idStr = String(tokenId);
+      // Skip if already showing in the hoisted "For Sale" section
+      if (listedIds.has(idStr)) return null;
 
-      setMetaLoading(true);
-      const working = [...enriched];
-      const BATCH = 8;
-
-      for (let i = 0; i < needsMeta.length; i += BATCH) {
-        const chunk = needsMeta.slice(i, i + BATCH);
-        await Promise.all(chunk.map(async (nft) => {
-          try {
-            const meta = await fetchTokenMetadata(nft.token_id, nft.metadata_base_uri);
-            const idx  = working.findIndex(
-              n => n.contract_address === nft.contract_address && n.token_id === nft.token_id
-            );
-            if (idx !== -1) working[idx] = { ...working[idx], metadata: meta };
-          } catch {}
-        }));
-        setOwnedNFTs([...working]);
+      try {
+        const res = await fetch(`${base}${tokenId}.json`, { cache: "force-cache" });
+        const json = await res.json();
+        return { tokenId: idStr, name: json.name || `${collection.name} #${tokenId}`, image: extractImageUrl(json) };
+      } catch {
+        return { tokenId: idStr, name: `${collection.name} #${tokenId}`, image: "" };
       }
-      setMetaLoading(false);
+    }));
 
-    } catch (e) {
-      setError(e.message);
-      setLoading(false);
-    }
-  }, [address]);
+    const valid = results.filter(t => t !== null);
+    setUnlistedTokens(prev => pageNum === 1 ? valid : [...prev, ...valid]);
+    setHasMore(end < supply);
+    setTokensLoading(false);
+  }, [collection, listedIds]);
 
   useEffect(() => {
-    if (isConnected && address) fetchPortfolio();
-  }, [address, isConnected, fetchPortfolio]);
-
-  const filtered = useMemo(() => {
-    let list = ownedNFTs;
-    if (tab === "Listed")   list = list.filter(n => !!n.listing);
-    if (tab === "Unlisted") list = list.filter(n => !n.listing);
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(n =>
-        (n.metadata?.name || n.name || n.collection_name || "").toLowerCase().includes(q) ||
-        String(n.token_id).includes(q)
-      );
+    if (collection?.metadata_base_uri) {
+      setUnlistedTokens([]);
+      setPage(1);
+      setHasMore(true);
+      fetchPage(1);
     }
-    return list;
-  }, [ownedNFTs, tab, search]);
+  }, [collection?.metadata_base_uri, fetchPage]);
 
-  const listedCount   = ownedNFTs.filter(n => !!n.listing).length;
-  const unlistedCount = ownedNFTs.filter(n => !n.listing).length;
+  useEffect(() => { if (page > 1) fetchPage(page); }, [page, fetchPage]);
 
-  if (!isConnected) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 fade-up">
-        <div className="w-20 h-20 rounded-full flex items-center justify-center"
-          style={{ background: "rgba(255,255,255,0.04)" }}>
-          <Wallet size={40} style={{ color: "#9da7b3" }} />
-        </div>
-        <div className="text-center">
-          <h1 className="text-2xl font-extrabold mb-1" style={{ color: "#e6edf3" }}>Connect Wallet</h1>
-          <p className="text-sm" style={{ color: "#9da7b3" }}>Connect to view your NFTs on Tempo Chain.</p>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!loaderRef.current) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore && !tokensLoading) setPage(p => p + 1);
+    }, { rootMargin: "200px" });
+    observer.observe(loaderRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, tokensLoading]);
+
+  if (colLoading) return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "#22d3ee" }} />
+    </div>
+  );
 
   return (
-    <div className="px-4 sm:px-6 py-8 max-w-7xl mx-auto fade-up">
-
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-6">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <Briefcase size={14} style={{ color: "#22d3ee" }} />
-            <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "#22d3ee" }}>Portfolio</span>
-          </div>
-          <h1 className="text-3xl font-extrabold uppercase" style={{ color: "#e6edf3" }}>My NFTs</h1>
-          <p className="mt-1 text-xs font-mono" style={{ color: "#9da7b3" }}>{address}</p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button onClick={fetchPortfolio} disabled={loading}
-            className="h-10 w-10 rounded-xl flex items-center justify-center"
-            style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
-            <RefreshCw size={14} className={loading || metaLoading ? "animate-spin" : ""} style={{ color: "#9da7b3" }} />
-          </button>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" size={13} style={{ color: "#9da7b3" }} />
-            <input type="text" placeholder="Search by name or ID..."
-              value={search} onChange={e => setSearch(e.target.value)}
-              className="h-10 w-44 sm:w-52 pl-8 pr-3 rounded-xl text-sm outline-none"
-              style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)", color: "#e6edf3" }}
-              onFocus={e => e.target.style.borderColor = "#22d3ee"}
-              onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.06)"} />
-          </div>
-          <div className="flex rounded-xl p-1" style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)" }}>
-            {[{ v: "grid", Icon: LayoutGrid }, { v: "list", Icon: List }].map(({ v, Icon }) => (
-              <button key={v} onClick={() => setView(v)} className="p-2 rounded-lg"
-                style={{ background: view === v ? "rgba(34,211,238,0.1)" : "none", color: view === v ? "#22d3ee" : "#9da7b3", border: "none", cursor: "pointer" }}>
-                <Icon size={15} />
-              </button>
-            ))}
-          </div>
-        </div>
+    <div className="fade-up min-h-screen pb-20" style={{ background: "#0b0f14" }}>
+      <div className="relative h-56 w-full overflow-hidden">
+        {collection?.banner_url ? <img src={collection.banner_url} className="w-full h-full object-cover opacity-60" /> : <div className="w-full h-full bg-slate-900" />}
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#0b0f14]" />
       </div>
 
-      {/* Stats */}
-      {!loading && ownedNFTs.length > 0 && (
-        <div className="grid grid-cols-3 gap-3 mb-5">
-          {[
-            { label: "Total NFTs", value: ownedNFTs.length },
-            { label: "Listed",     value: listedCount,   color: "#22d3ee" },
-            { label: "Unlisted",   value: unlistedCount },
-          ].map(({ label, value, color }) => (
-            <div key={label} className="rounded-2xl p-3"
-              style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <div className="text-[10px] uppercase tracking-wide mb-0.5" style={{ color: "#9da7b3" }}>{label}</div>
-              <div className="font-mono font-bold text-lg" style={{ color: color || "#e6edf3" }}>{value}</div>
+      <div className="px-4 sm:px-6 max-w-7xl mx-auto -mt-16 relative z-10">
+        <div className="flex flex-col md:flex-row md:items-end gap-5 mb-8">
+          <div className="w-28 h-28 rounded-3xl overflow-hidden border-[6px] border-[#0b0f14] bg-[#121821]">
+            <NFTImage src={collection?.logo_url} className="w-full h-full object-cover" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-1">
+              <h1 className="text-3xl font-extrabold uppercase tracking-tight text-[#e6edf3]">{collection?.name}</h1>
+              {collection?.verified && <CheckCircle2 size={22} className="text-[#22d3ee]" />}
             </div>
-          ))}
+            <p className="text-sm text-[#9da7b3] font-bold">By {collection?.creator_name || "Tempo Creator"}</p>
+          </div>
         </div>
-      )}
 
-      {/* Tabs */}
-      {!loading && ownedNFTs.length > 0 && (
-        <div className="flex items-center gap-1.5 mb-5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
+          <StatItem label="Floor" value={stats.floor} />
+          <StatItem label="Top Offer" value={stats.topOffer} />
+          <StatItem label="24H Vol" value={stats.vol24h} />
+          <StatItem label="Total Vol" value={stats.totalVol} />
+          <StatItem label="Listed" value={stats.listed} subValue={stats.listedPct} />
+          <StatItem label="Owners" value={stats.owners} subValue={stats.ownerPct} />
+          <StatItem label="Supply" value={stats.supply} />
+          <StatItem label="Royalties" value={stats.royalties} />
+        </div>
+
+        <div className="flex gap-6 border-b border-white/10 mb-6">
           {TABS.map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className="h-8 px-4 rounded-full text-xs font-semibold"
-              style={{
-                background: tab === t ? "rgba(34,211,238,0.12)" : "#121821",
-                color:      tab === t ? "#22d3ee" : "#9da7b3",
-                border:     tab === t ? "1px solid rgba(34,211,238,0.3)" : "1px solid rgba(255,255,255,0.06)",
-                cursor: "pointer",
-              }}>
+            <button key={t} onClick={() => setTab(t)} className={`pb-4 text-sm font-bold uppercase tracking-widest border-b-2 transition-all ${tab === t ? "border-[#22d3ee] text-[#22d3ee]" : "border-transparent text-[#9da7b3]"}`}>
               {t}
-              {t === "Listed"   && listedCount   > 0 && ` (${listedCount})`}
-              {t === "Unlisted" && unlistedCount  > 0 && ` (${unlistedCount})`}
             </button>
           ))}
-          {metaLoading && (
-            <span className="ml-auto flex items-center gap-1.5 text-xs" style={{ color: "#9da7b3" }}>
-              <RefreshCw size={11} className="animate-spin" /> Loading images...
-            </span>
-          )}
         </div>
-      )}
 
-      {error && (
-        <div className="rounded-xl px-4 py-3 mb-5 text-sm"
-          style={{ background: "rgba(239,68,68,0.1)", color: "#EF4444", border: "1px solid rgba(239,68,68,0.2)" }}>
-          {error}
-        </div>
-      )}
+        {tab === "Items" && (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+              {/* 1. Show Listened NFTs First */}
+              {activeListings.map(listing => (
+                <NFTGridItem 
+                  key={`listed-${listing.token_id}`} 
+                  token={{ tokenId: listing.token_id, name: `${collection?.name} #${listing.token_id}`, image: listing.image_url || "" }} 
+                  collectionName={collection?.name} 
+                  slug={id} 
+                  listing={listing} 
+                />
+              ))}
 
-      {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 8 }).map((_, i) => <CardSkeleton key={i} />)}
-        </div>
-      ) : filtered.length > 0 ? (
-        <div className={view === "grid" ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4" : "space-y-2"}>
-          {filtered.map((nft, idx) => (
-            <NFTCard
-              key={`${nft.contract_address}-${nft.token_id}-${idx}`}
-              nft={nft} view={view}
-              onList={(nft) => setListModal({
-                tokenId:    nft.token_id,
-                contract:   nft.contract_address,
-                name:       nft.metadata?.name  || nft.name  || `#${nft.token_id}`,
-                image:      nft.metadata?.image || nft.image || null,
-                attributes: nft.metadata?.attributes || [],
-                collection: nft.collection_name,
-                slug:       nft.collection_slug,
-              })}
-              onDelist={(nft) => setDelistModal({
-                tokenId:    nft.token_id,
-                contract:   nft.contract_address,
-                listingId:  nft.listing.listing_id,
-                name:       nft.metadata?.name  || nft.name  || `#${nft.token_id}`,
-                image:      nft.metadata?.image || nft.image || null,
-                price:      nft.listing.price,
-                collection: nft.collection_name,
-              })}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="py-24 text-center rounded-3xl" style={{ border: "1px dashed rgba(255,255,255,0.06)" }}>
-          <div className="text-5xl mb-4">🎨</div>
-          <div className="font-bold text-lg mb-2" style={{ color: "#e6edf3" }}>
-            {tab === "Listed" ? "No listed NFTs" : tab === "Unlisted" ? "All NFTs are listed!" : "No NFTs found"}
-          </div>
-          <p className="text-sm" style={{ color: "#9da7b3" }}>
-            {tab === "All" ? "No NFTs from supported collections found in this wallet." : ""}
-          </p>
-        </div>
-      )}
+              {/* 2. Show the rest of the collection */}
+              {unlistedTokens.map(token => (
+                <NFTGridItem 
+                  key={`unlisted-${token.tokenId}`} 
+                  token={token} 
+                  collectionName={collection?.name} 
+                  slug={id} 
+                  listing={null} 
+                />
+              ))}
+              {tokensLoading && Array(10).fill(0).map((_, i) => <CardSkeleton key={i} />)}
+            </div>
+            <div ref={loaderRef} className="h-10" />
+          </>
+        )}
 
-      {listModal && (
-        <ListModal nft={listModal} onClose={() => { setListModal(null); fetchPortfolio(); }} />
-      )}
-      {delistModal && (
-        <DelistModal nft={delistModal} onClose={() => { setDelistModal(null); fetchPortfolio(); }} />
-      )}
+        {tab === "Activity" && <ActivityFeed collectionId={id} nftContract={collection?.contract_address} limit={40} />}
+      </div>
     </div>
   );
 }
