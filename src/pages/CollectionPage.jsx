@@ -1,8 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { CheckCircle2, ExternalLink, Twitter, Globe, TrendingDown, TrendingUp } from "lucide-react";
-// ✅ IMPORT UPDATED: Added useCollectionStats to your existing imports
-import { useCollection, useRealtimeListings, useCollectionStats } from "@/hooks/useSupabase";
+import { useCollection, useRealtimeListings } from "@/hooks/useSupabase";
 import NFTImage from "@/components/NFTImage.jsx";
 import { CardSkeleton } from "@/components/Skeleton.jsx";
 import { extractImageUrl } from "@/utils/nftImageUtils.js";
@@ -55,7 +54,7 @@ function NFTGridItem({ token, collectionName, slug, listing }) {
         <div className="text-sm font-bold truncate" style={{ color: "#e6edf3" }}>{token.name}</div>
         {listing && (
           <div className="font-mono text-xs font-bold mt-0.5" style={{ color: "#22d3ee" }}>
-            {Number(listing.displayPrice || listing.price / 1e6).toFixed(2)} USD
+            {Number(listing.price).toFixed(2)} USD
           </div>
         )}
       </div>
@@ -65,14 +64,10 @@ function NFTGridItem({ token, collectionName, slug, listing }) {
 
 export default function CollectionPage() {
   const { id } = useParams();
-  
-  // 1. Get collection profile data
+  // ✅ Fixed: useCollection returns isLoading not loading
   const { collection, isLoading: colLoading } = useCollection(id);
 
-  // 2. ✅ INTEGRATED: Get real-time stats from the RPC hook we just built
-  const { stats: rpcStats } = useCollectionStats(collection?.contract_address || "");
-
-  // 3. Get live listing data
+  // ✅ Use realtimeListings to get live listing data for this collection
   const { listings } = useRealtimeListings(collection?.contract_address);
 
   // Build a fast lookup: tokenId → listing
@@ -89,33 +84,29 @@ export default function CollectionPage() {
   const [tab, setTab]                 = useState("Items");
   const loaderRef                     = useRef(null);
 
-  // ✅ UPDATED STATS: Prioritizing the RPC values over the table data
+  // ✅ Fixed stats — correct field names from Supabase schema
   const stats = useMemo(() => {
-    // Favor rpcStats (Live) -> collection table (Fallback) -> 0
-    const supply = rpcStats.totalSupply || collection?.total_supply || 0;
-    const floorPrice = rpcStats.floorPrice || collection?.floor_price || 0;
-    const owners = rpcStats.uniqueOwners || collection?.owners || 0;
-    const listed = rpcStats.listedCount || listings.filter(l => l.active).length;
+    const supply = collection?.total_supply || 0;
+    const listed = listings.filter(l => l.active).length;
     const royaltyBps = collection?.royalty_bps ?? 0;
-
     return {
-      floor:     floorPrice > 0 ? `${Number(floorPrice).toFixed(2)} USD` : "—",
-      topOffer:  collection?.top_offer ? `${Number(collection.top_offer).toFixed(2)} USD` : "—",
-      vol24h:    collection?.volume_24h ? `${Number(collection.volume_24h).toFixed(2)} USD` : "0 USD",
-      totalVol:  collection?.volume_total ? `${Number(collection.volume_total).toFixed(2)} USD` : "0 USD",
-      mktCap:    floorPrice && supply
-        ? `${(Number(floorPrice) * supply).toLocaleString()} USD`
+      floor:     collection?.floor_price    ? `${Number(collection.floor_price).toFixed(2)} USD`    : "—",
+      topOffer:  collection?.top_offer      ? `${Number(collection.top_offer).toFixed(2)} USD`      : "—",
+      vol24h:    collection?.volume_24h     ? `${Number(collection.volume_24h).toFixed(2)} USD`     : "0 USD",
+      totalVol:  collection?.volume_total   ? `${Number(collection.volume_total).toFixed(2)} USD`   : "0 USD",
+      mktCap:    collection?.floor_price && supply
+        ? `${(Number(collection.floor_price) * supply).toLocaleString()} USD`
         : "—",
-      owners:    owners,
-      ownerPct:  supply && owners
-        ? `${((owners / supply) * 100).toFixed(1)}%`
+      owners:    collection?.owners || 0,
+      ownerPct:  supply && collection?.owners
+        ? `${((collection.owners / supply) * 100).toFixed(1)}%`
         : "0%",
       listed,
       listedPct: supply ? `${((listed / supply) * 100).toFixed(1)}% listed` : "",
       supply:    supply?.toLocaleString() || "0",
       royalties: royaltyBps ? `${(royaltyBps / 100).toFixed(1)}%` : "0%",
     };
-  }, [collection, listings, rpcStats]); // Re-run when live stats arrive
+  }, [collection, listings]);
 
   // ─── Fetch tokens from IPFS in pages ─────────────────────────────────────
   const fetchPage = useCallback(async (pageNum) => {
@@ -125,8 +116,7 @@ export default function CollectionPage() {
     if (base.startsWith("ipfs://")) base = base.replace("ipfs://", "https://gateway.lighthouse.storage/ipfs/");
     if (!base.endsWith("/")) base += "/";
 
-    // Use live supply for total pagination count
-    const supply = rpcStats.totalSupply || collection.total_supply || 2000;
+    const supply = collection.total_supply || 2000;
     const start = (pageNum - 1) * PAGE_SIZE + 1;
     const end   = Math.min(start + PAGE_SIZE - 1, supply);
 
@@ -148,7 +138,7 @@ export default function CollectionPage() {
     setTokens(prev => pageNum === 1 ? results : [...prev, ...results]);
     setHasMore(end < supply);
     setTokensLoading(false);
-  }, [collection, rpcStats.totalSupply]);
+  }, [collection]);
 
   // Load first page when collection loads
   useEffect(() => {
@@ -158,12 +148,12 @@ export default function CollectionPage() {
       setHasMore(true);
       fetchPage(1);
     }
-  }, [collection?.metadata_base_uri, fetchPage]);
+  }, [collection?.metadata_base_uri]);
 
   // Load next page
   useEffect(() => {
     if (page > 1) fetchPage(page);
-  }, [page, fetchPage]);
+  }, [page]);
 
   // ─── Infinite scroll via IntersectionObserver ─────────────────────────────
   useEffect(() => {
