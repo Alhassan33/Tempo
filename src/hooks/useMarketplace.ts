@@ -3,7 +3,7 @@ import {
   useAccount, useChainId, usePublicClient,
   useWriteContract, useConnect, useDisconnect,
 } from 'wagmi'
-import { parseUnits } from 'viem'
+import { parseUnits, formatUnits } from 'viem'
 import { injected } from 'wagmi/connectors'
 import { MARKETPLACE_ABI, ERC721_ABI, ERC20_ABI } from '../abi/marketplace.js'
 import { tempoMainnet } from '../wagmi.config.js'
@@ -19,8 +19,8 @@ export interface Listing {
   seller: string
   nftAddress: string
   tokenId: string
-  price: string
-  displayPrice: string
+  price: string        // Raw units (e.g., "20000000")
+  displayPrice: string // Human readable (e.g., "20.00")
   active: boolean
   txHash: string
   blockNumber: number
@@ -29,6 +29,20 @@ export interface Listing {
   image: string | null
   metadata: Record<string, any> | null
   rarityRank: number | null
+}
+
+// ─── Decode revert codes into readable messages ───────────────────────────────
+function parseContractError(err: any): string {
+  const msg = err?.shortMessage || err?.message || ''
+  if (msg.includes('1002')) return 'Price changed — refresh and try again'
+  if (msg.includes('1001')) return 'Listing is no longer active'
+  if (msg.includes('1003')) return 'Below minimum listing price'
+  if (msg.includes('1004')) return 'Cannot buy your own listing'
+  if (msg.includes('EnforcedPause'))   return 'Marketplace is currently paused'
+  if (msg.includes('insufficient'))    return 'Insufficient USD balance'
+  if (msg.includes('user rejected') || msg.includes('User rejected')) return 'Transaction cancelled'
+  if (msg.includes('allowance'))       return 'Approval failed — please try again'
+  return err?.shortMessage || 'Transaction failed'
 }
 
 export function useMarketplace() {
@@ -55,13 +69,14 @@ export function useMarketplace() {
   const status = (type: 'info' | 'success' | 'error', msg: string) => setTxStatus({ type, msg })
   const clearStatus = () => setTxStatus(null)
 
+  // ✅ FIXED: Correctly maps raw 6-decimal pathUSD to human readable decimals
   const mapRpcToListing = (item: any): Listing => ({
     id: item.id,
     listingId: String(item.listing_id),
     seller: item.seller,
     nftAddress: item.nft_contract,
     tokenId: String(item.token_id),
-    price: String(item.price),
+    price: String(item.price), 
     displayPrice: (Number(item.price) / 10 ** USD_DECIMALS).toFixed(2),
     active: item.active,
     txHash: item.tx_hash,
@@ -76,6 +91,7 @@ export function useMarketplace() {
   const fetchListings = useCallback(async () => {
     setLoading(true)
     try {
+      // Using the RPC call from your "Current" version to keep metadata/rarity
       const { data, error } = await supabase
         .rpc('get_active_listings_with_nfts')
 
@@ -127,7 +143,7 @@ export function useMarketplace() {
         functionName: 'approve',
         args: [network.marketplace, BigInt(tokenId)],
       })
-      await publicClient.waitForTransactionReceipt({ hash: approveHash })
+      await publicClient!.waitForTransactionReceipt({ hash: approveHash })
 
       status('info', 'Step 2/2: Listing on Tempo...')
       const listHash = await writeContractAsync({
@@ -136,10 +152,10 @@ export function useMarketplace() {
         functionName: 'listNFT',
         args: [nftContract, BigInt(tokenId), priceUnits],
       })
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: listHash })
+      const receipt = await publicClient!.waitForTransactionReceipt({ hash: listHash })
 
       try {
-        const totalRaw = await publicClient.readContract({
+        const totalRaw = await publicClient!.readContract({
           address: network.marketplace as `0x${string}`,
           abi: MARKETPLACE_ABI,
           functionName: 'totalListings',
@@ -151,7 +167,7 @@ export function useMarketplace() {
           seller: account.toLowerCase(),
           nft_contract: nftContract.toLowerCase(),
           token_id: Number(tokenId),
-          price: Number(price),
+          price: Number(priceUnits.toString()), // Store raw units in DB
           active: true,
           tx_hash: listHash,
           block_number: Number(receipt.blockNumber),
@@ -165,13 +181,13 @@ export function useMarketplace() {
 
       status('success', 'NFT Listed Successfully!')
     } catch (err: any) {
-      status('error', err?.shortMessage || 'Transaction failed')
+      status('error', parseContractError(err))
     } finally {
       setLoading(false)
     }
   }, [account, wrongNetwork, network, writeContractAsync, publicClient, fetchListings])
 
-  // ─── Buy NFT ───────────────────────────────────────────────────────────────
+  // ─── Buy NFT (Upgraded to V2) ──────────────────────────────────────────────
   const buyNFT = useCallback(async (listing: Listing) => {
     if (!account || wrongNetwork) return status('error', 'Check connection')
     
@@ -179,25 +195,35 @@ export function useMarketplace() {
       setLoading(true)
       clearStatus()
       
-      const price = BigInt(listing.price)
+      // ✅ V2 UPGRADE: Get quote first to get totalCost (includes royalties/fees)
+      status('info', 'Fetching quote...')
+      const quote = await publicClient!.readContract({
+        address: network.marketplace as `0x${string}`,
+        abi: MARKETPLACE_ABI,
+        functionName: 'quoteBuyCost',
+        args: [BigInt(listing.listingId)],
+      }) as any;
+
+      const totalCost = quote.totalCost;
 
       status('info', 'Step 1/2: Approving pathUSD...')
       const approveHash = await writeContractAsync({
         address: network.paymentToken as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [network.marketplace, price],
+        args: [network.marketplace, totalCost],
       })
-      await publicClient.waitForTransactionReceipt({ hash: approveHash })
+      await publicClient!.waitForTransactionReceipt({ hash: approveHash })
 
       status('info', 'Step 2/2: Buying NFT...')
       const buyHash = await writeContractAsync({
         address: network.marketplace as `0x${string}`,
         abi: MARKETPLACE_ABI,
         functionName: 'buyNFT',
-        args: [BigInt(listing.listingId)],
+        // ✅ V2 UPGRADE: Requires (listingId, maxPrice)
+        args: [BigInt(listing.listingId), totalCost],
       })
-      await publicClient.waitForTransactionReceipt({ hash: buyHash })
+      await publicClient!.waitForTransactionReceipt({ hash: buyHash })
 
       try {
         await supabase.from('listings')
@@ -208,13 +234,13 @@ export function useMarketplace() {
       status('success', 'Purchase Complete!')
       await Promise.all([fetchListings(), fetchBalance()])
     } catch (err: any) {
-      status('error', err?.shortMessage || 'Transaction failed')
+      status('error', parseContractError(err))
     } finally {
       setLoading(false)
     }
   }, [account, wrongNetwork, network, writeContractAsync, publicClient, fetchListings, fetchBalance])
 
-  // ─── NEW: Delist NFT ───────────────────────────────────────────────────────
+  // ─── Delist NFT ────────────────────────────────────────────────────────────
   const delistNFT = useCallback(async (listingId: string | number) => {
     if (!account || wrongNetwork) return status('error', 'Check connection')
     
@@ -230,9 +256,8 @@ export function useMarketplace() {
         functionName: 'cancelListing',
         args: [BigInt(listingId)],
       })
-      await publicClient.waitForTransactionReceipt({ hash: cancelHash })
+      await publicClient!.waitForTransactionReceipt({ hash: cancelHash })
 
-      // Update Supabase
       try {
         await supabase.from('listings')
           .update({ active: false, updated_at: new Date().toISOString() })
@@ -245,14 +270,13 @@ export function useMarketplace() {
       await fetchListings()
       return true
     } catch (err: any) {
-      status('error', err?.shortMessage || 'Transaction failed')
+      status('error', parseContractError(err))
       return false
     } finally {
       setLoading(false)
     }
   }, [account, wrongNetwork, network, writeContractAsync, publicClient, fetchListings])
 
-  // ─── Effects ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (isConnected && !wrongNetwork) {
       fetchListings()
@@ -274,13 +298,12 @@ export function useMarketplace() {
     disconnect,
     listNFT,
     buyNFT,
-    delistNFT,  // ← NEW
+    delistNFT,
     fetchListings,
     clearStatus,
   }
 }
 
-// Convenience exports
 export const useListNFT = () => {
   const { listNFT, loading, txStatus, clearStatus } = useMarketplace()
   return { listNFT, loading, txStatus, clearStatus }
@@ -291,7 +314,6 @@ export const useBuyNFT = () => {
   return { buyNFT, loading, txStatus, clearStatus }
 }
 
-// NEW: Delist hook
 export const useDelistNFT = () => {
   const { delistNFT, loading, txStatus, clearStatus } = useMarketplace()
   return { delistNFT, loading, txStatus, clearStatus }
