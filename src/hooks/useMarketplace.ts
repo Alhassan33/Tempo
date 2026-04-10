@@ -73,46 +73,23 @@ export function useMarketplace() {
     rarityRank: item.rarity_rank,
   })
 
-  // ─── Fetch Listings with DEBUG LOGGING ──────────────────────────────────────
   const fetchListings = useCallback(async () => {
-    console.log('[useMarketplace] fetchListings called')
-    console.log('[useMarketplace] isConnected:', isConnected, 'wrongNetwork:', wrongNetwork)
-    
     setLoading(true)
     try {
-      console.log('[useMarketplace] Calling Supabase RPC...')
       const { data, error } = await supabase
         .rpc('get_active_listings_with_nfts')
 
-      console.log('[useMarketplace] Supabase response:', { data, error })
+      if (error) throw error
       
-      if (error) {
-        console.error('[useMarketplace] Supabase error:', error)
-        throw error
-      }
-      
-      if (!data) {
-        console.log('[useMarketplace] No data returned from RPC')
-        setListings([])
-        return
-      }
-      
-      console.log('[useMarketplace] Raw data count:', data.length)
-      console.log('[useMarketplace] First item sample:', data[0])
-
-      const transformed = data.map(mapRpcToListing)
-      console.log('[useMarketplace] Transformed listings:', transformed.length)
-      console.log('[useMarketplace] First transformed:', transformed[0])
-
+      const transformed = (data || []).map(mapRpcToListing)
       setListings(transformed)
-    } catch (err: any) {
-      console.error('[useMarketplace] Fetch listings failed:', err.message, err)
+    } catch (err) {
+      console.error('Fetch listings failed:', err)
       setListings([])
     } finally {
       setLoading(false)
-      console.log('[useMarketplace] fetchListings complete, loading set to false')
     }
-  }, [isConnected, wrongNetwork]) // Added deps for debugging clarity
+  }, [])
 
   const fetchBalance = useCallback(async () => {
     if (!account || !network.paymentToken) return
@@ -237,18 +214,51 @@ export function useMarketplace() {
     }
   }, [account, wrongNetwork, network, writeContractAsync, publicClient, fetchListings, fetchBalance])
 
+  // ─── NEW: Delist NFT ───────────────────────────────────────────────────────
+  const delistNFT = useCallback(async (listingId: string | number) => {
+    if (!account || wrongNetwork) return status('error', 'Check connection')
+    
+    try {
+      setLoading(true)
+      clearStatus()
+
+      status('info', 'Cancelling listing...')
+
+      const cancelHash = await writeContractAsync({
+        address: network.marketplace as `0x${string}`,
+        abi: MARKETPLACE_ABI,
+        functionName: 'cancelListing',
+        args: [BigInt(listingId)],
+      })
+      await publicClient.waitForTransactionReceipt({ hash: cancelHash })
+
+      // Update Supabase
+      try {
+        await supabase.from('listings')
+          .update({ active: false, updated_at: new Date().toISOString() })
+          .eq('listing_id', Number(listingId))
+      } catch (dbErr) {
+        console.warn('[delistNFT] Supabase update failed:', dbErr)
+      }
+
+      status('success', 'Listing Cancelled Successfully!')
+      await fetchListings()
+      return true
+    } catch (err: any) {
+      status('error', err?.shortMessage || 'Transaction failed')
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [account, wrongNetwork, network, writeContractAsync, publicClient, fetchListings])
+
   // ─── Effects ───────────────────────────────────────────────────────────────
   useEffect(() => {
-    console.log('[useMarketplace] Effect triggered:', { isConnected, wrongNetwork, chainId })
-    
     if (isConnected && !wrongNetwork) {
-      console.log('[useMarketplace] Calling fetchListings and fetchBalance')
       fetchListings()
       fetchBalance()
-    } else {
-      console.log('[useMarketplace] Skipping fetch - not connected or wrong network')
     }
-  }, [isConnected, wrongNetwork, chainId, fetchListings, fetchBalance])
+  }, [isConnected, wrongNetwork, fetchListings, fetchBalance])
 
   return {
     account,
@@ -264,11 +274,13 @@ export function useMarketplace() {
     disconnect,
     listNFT,
     buyNFT,
+    delistNFT,  // ← NEW
     fetchListings,
     clearStatus,
   }
 }
 
+// Convenience exports
 export const useListNFT = () => {
   const { listNFT, loading, txStatus, clearStatus } = useMarketplace()
   return { listNFT, loading, txStatus, clearStatus }
@@ -277,4 +289,10 @@ export const useListNFT = () => {
 export const useBuyNFT = () => {
   const { buyNFT, loading, txStatus, clearStatus } = useMarketplace()
   return { buyNFT, loading, txStatus, clearStatus }
+}
+
+// NEW: Delist hook
+export const useDelistNFT = () => {
+  const { delistNFT, loading, txStatus, clearStatus } = useMarketplace()
+  return { delistNFT, loading, txStatus, clearStatus }
 }
