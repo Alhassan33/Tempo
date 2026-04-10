@@ -19,27 +19,19 @@ import AdminPage from "./pages/AdminPage.jsx";
 import { LaunchpadProvider } from "./context/LaunchpadContext.jsx";
 import { PortfolioProvider } from "./context/PortfolioContext.jsx";
 
-// 1. Define Tempo Mainnet Configuration
 const tempoMainnet = {
   id: 4217,
   name: "Tempo Mainnet",
   nativeCurrency: { name: "USD", symbol: "USD", decimals: 18 },
-  rpcUrls: {
-    default: { http: ["https://rpc.tempo.xyz"] },
-  },
-  blockExplorers: {
-    default: { name: "Tempo Explorer", url: "https://explore.tempo.xyz" },
-  },
+  rpcUrls: { default: { http: ["https://rpc.tempo.xyz"] } },
+  blockExplorers: { default: { name: "Tempo Explorer", url: "https://explore.tempo.xyz" } },
 };
 
-// 2. Setup Wagmi Config
 const config = getDefaultConfig({
   appName: "Tempo NFTs",
-  projectId: "YOUR_REOWN_PROJECT_ID", // Get one at cloud.reown.com
+  projectId: "YOUR_REOWN_PROJECT_ID", 
   chains: [tempoMainnet],
-  transports: {
-    [tempoMainnet.id]: http(),
-  },
+  transports: { [tempoMainnet.id]: http() },
 });
 
 const queryClient = new QueryClient();
@@ -48,16 +40,19 @@ export default function App() {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider theme={darkTheme()}>
+        <RainbowKitProvider theme={darkTheme({ accentColor: '#22d3ee' })}>
           <BrowserRouter>
             <LaunchpadProvider>
               <PortfolioProvider>
                 <Layout>
                   <Routes>
                     <Route path="/" element={<Market />} />
-<Route path="/collection/:id/:tokenId" element={<NFTItemPage />} />
+                    
+                    {/* Collection Routes: Specific ID+Token must come first */}
+                    <Route path="/collection/:id/:tokenId" element={<NFTItemPage />} />
                     <Route path="/collection/:id" element={<CollectionPage />} />
-                    <Route path="/nft/:tokenId" element={<NFTItemPage />} />
+                    
+                    {/* General Routes */}
                     <Route path="/launchpad" element={<LaunchpadPage />} />
                     <Route path="/launchpad/:slug" element={<MintPage />} />
                     <Route path="/portfolio" element={<PortfolioPage />} />
