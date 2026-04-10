@@ -13,21 +13,18 @@ import { supabase } from '../lib/supabase.js'
 const TEMPO_CHAIN_IDS = new Set([tempoMainnet.id])
 const USD_DECIMALS = 6
 
-// ─── Types ───────────────────────────────────────────────────────────────────
 export interface Listing {
-  // Core listing data (camelCase for UI/consistency)
   id: number
   listingId: string
   seller: string
   nftAddress: string
   tokenId: string
-  price: string           // Raw micro-USD for buyNFT BigInt ("25000000")
-  displayPrice: string    // Human-readable for UI ("25.00")
+  price: string
+  displayPrice: string
   active: boolean
   txHash: string
   blockNumber: number
   createdAt: string
-  // Joined NFT metadata
   name: string | null
   image: string | null
   metadata: Record<string, any> | null
@@ -58,16 +55,14 @@ export function useMarketplace() {
   const status = (type: 'info' | 'success' | 'error', msg: string) => setTxStatus({ type, msg })
   const clearStatus = () => setTxStatus(null)
 
-  // ─── Data Mapper ───────────────────────────────────────────────────────────
-  /** Transforms Supabase RPC response to consistent camelCase Listing type */
   const mapRpcToListing = (item: any): Listing => ({
     id: item.id,
     listingId: String(item.listing_id),
     seller: item.seller,
     nftAddress: item.nft_contract,
     tokenId: String(item.token_id),
-    price: String(item.price),                                           // Raw: "25000000"
-    displayPrice: (Number(item.price) / 10 ** USD_DECIMALS).toFixed(2),  // Human: "25.00"
+    price: String(item.price),
+    displayPrice: (Number(item.price) / 10 ** USD_DECIMALS).toFixed(2),
     active: item.active,
     txHash: item.tx_hash,
     blockNumber: item.block_number,
@@ -78,26 +73,47 @@ export function useMarketplace() {
     rarityRank: item.rarity_rank,
   })
 
-  // ─── Fetch Listings (Supabase RPC) ─────────────────────────────────────────
+  // ─── Fetch Listings with DEBUG LOGGING ──────────────────────────────────────
   const fetchListings = useCallback(async () => {
+    console.log('[useMarketplace] fetchListings called')
+    console.log('[useMarketplace] isConnected:', isConnected, 'wrongNetwork:', wrongNetwork)
+    
     setLoading(true)
     try {
+      console.log('[useMarketplace] Calling Supabase RPC...')
       const { data, error } = await supabase
         .rpc('get_active_listings_with_nfts')
 
-      if (error) throw error
+      console.log('[useMarketplace] Supabase response:', { data, error })
       
-      const transformed = (data || []).map(mapRpcToListing)
+      if (error) {
+        console.error('[useMarketplace] Supabase error:', error)
+        throw error
+      }
+      
+      if (!data) {
+        console.log('[useMarketplace] No data returned from RPC')
+        setListings([])
+        return
+      }
+      
+      console.log('[useMarketplace] Raw data count:', data.length)
+      console.log('[useMarketplace] First item sample:', data[0])
+
+      const transformed = data.map(mapRpcToListing)
+      console.log('[useMarketplace] Transformed listings:', transformed.length)
+      console.log('[useMarketplace] First transformed:', transformed[0])
+
       setListings(transformed)
-    } catch (err) {
-      console.error('Fetch listings failed:', err)
+    } catch (err: any) {
+      console.error('[useMarketplace] Fetch listings failed:', err.message, err)
       setListings([])
     } finally {
       setLoading(false)
+      console.log('[useMarketplace] fetchListings complete, loading set to false')
     }
-  }, [])
+  }, [isConnected, wrongNetwork]) // Added deps for debugging clarity
 
-  // ─── Fetch Balance ─────────────────────────────────────────────────────────
   const fetchBalance = useCallback(async () => {
     if (!account || !network.paymentToken) return
     try {
@@ -145,7 +161,6 @@ export function useMarketplace() {
       })
       const receipt = await publicClient.waitForTransactionReceipt({ hash: listHash })
 
-      // Optimistic Supabase write
       try {
         const totalRaw = await publicClient.readContract({
           address: network.marketplace as `0x${string}`,
@@ -187,7 +202,7 @@ export function useMarketplace() {
       setLoading(true)
       clearStatus()
       
-      const price = BigInt(listing.price)  // Uses raw micro-USD
+      const price = BigInt(listing.price)
 
       status('info', 'Step 1/2: Approving pathUSD...')
       const approveHash = await writeContractAsync({
@@ -207,7 +222,6 @@ export function useMarketplace() {
       })
       await publicClient.waitForTransactionReceipt({ hash: buyHash })
 
-      // Optimistic update in Supabase
       try {
         await supabase.from('listings')
           .update({ active: false, updated_at: new Date().toISOString() })
@@ -225,11 +239,16 @@ export function useMarketplace() {
 
   // ─── Effects ───────────────────────────────────────────────────────────────
   useEffect(() => {
+    console.log('[useMarketplace] Effect triggered:', { isConnected, wrongNetwork, chainId })
+    
     if (isConnected && !wrongNetwork) {
+      console.log('[useMarketplace] Calling fetchListings and fetchBalance')
       fetchListings()
       fetchBalance()
+    } else {
+      console.log('[useMarketplace] Skipping fetch - not connected or wrong network')
     }
-  }, [isConnected, wrongNetwork, fetchListings, fetchBalance])
+  }, [isConnected, wrongNetwork, chainId, fetchListings, fetchBalance])
 
   return {
     account,
@@ -250,7 +269,6 @@ export function useMarketplace() {
   }
 }
 
-// Convenience exports
 export const useListNFT = () => {
   const { listNFT, loading, txStatus, clearStatus } = useMarketplace()
   return { listNFT, loading, txStatus, clearStatus }
