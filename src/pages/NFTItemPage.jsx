@@ -4,13 +4,14 @@ import { useAccount } from "wagmi";
 import {
   ArrowLeft, ExternalLink, Tag, ShoppingCart,
   AlertCircle, CheckCircle2, ChevronDown, ChevronUp,
-  Layers, Heart, Share2, Check, Copy, Gavel
+  Layers, Heart, Share2, Check, Copy, Gavel, XCircle
 } from "lucide-react";
 
 import { useCollection, useListings } from "@/hooks/useSupabase";
 import { useMarketplace } from "@/hooks/useMarketplace";
 import { useNFTMetadata, formatTraits, traitColor } from "@/hooks/useNFTMetadata";
 import ListModal from "@/components/ListModal.jsx";
+import DelistModal from "@/components/DelistModal.jsx";
 import ActivityFeed from "@/components/ActivityFeed.jsx";
 import CollectionBids from "@/components/CollectionBids.jsx";
 import PriceChart from "@/components/PriceChart.jsx";
@@ -207,6 +208,7 @@ export default function NFTItemPage() {
   const [showBuy,   setShowBuy]   = useState(false);
   const [showOffer, setShowOffer] = useState(false);
   const [showList,  setShowList]  = useState(false);
+  const [showDelist, setShowDelist] = useState(false);
   const [liked,     setLiked]     = useState(false);
   const [shared,    setShared]    = useState(false);
 
@@ -336,9 +338,11 @@ export default function NFTItemPage() {
                   <div className="text-xs mt-1" style={{ color: "#9da7b3" }}>Listed by {shortenAddress(listing.seller)}</div>
                 </div>
                 {isOwner ? (
-                  <button onClick={() => setShowList(true)} className="w-full h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
-                    style={{ background: "rgba(34,211,238,0.1)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.3)", cursor: "pointer" }}>
-                    <Tag size={14} /> Manage Listing
+                  <button 
+                    onClick={() => setShowDelist(true)} 
+                    className="w-full h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+                    style={{ background: "rgba(239,68,68,0.15)", color: "#EF4444", border: "1px solid rgba(239,68,68,0.3)", cursor: "pointer" }}>
+                    <XCircle size={14} /> Cancel Listing
                   </button>
                 ) : (
                   <div className="flex gap-3">
@@ -365,8 +369,8 @@ export default function NFTItemPage() {
                   )}
                   <button onClick={() => setShowOffer(true)} className="flex-1 h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
                     style={{ background: "rgba(167,139,250,0.1)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.3)", cursor: "pointer" }}>
-                    <Gavel size={14} /> Make Offer
-                  </button>
+                      <Gavel size={14} /> Make Offer
+                    </button>
                 </div>
               </div>
             )}
@@ -427,6 +431,7 @@ export default function NFTItemPage() {
         </div>
       </div>
 
+      {/* Modals */}
       {showBuy && listing && (
         <BuyModal listing={listing} metadata={metadata} onClose={() => { setShowBuy(false); clearStatus(); }} />
       )}
@@ -451,6 +456,20 @@ export default function NFTItemPage() {
         <ListModal
           nft={{ tokenId: Number(tokenId), name: metadata?.name, image: metadata?.image, collection: collection?.name, contract: nftContract }}
           onClose={() => setShowList(false)}
+        />
+      )}
+      {showDelist && listing && (
+        <DelistModal
+          nft={{
+            listingId: listing.listing_id,
+            tokenId: Number(tokenId),
+            name: metadata?.name,
+            image: metadata?.image,
+            collection: collection?.name,
+            price: listing.price,
+            displayPrice: fmtPrice(listing.price)
+          }}
+          onClose={() => setShowDelist(false)}
         />
       )}
     </div>
