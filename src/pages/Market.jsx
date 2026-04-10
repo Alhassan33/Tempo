@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCollections, useFeaturedProjects } from "../hooks/useSupabase";
-import { useMarketplace } from "../hooks/useMarketplace";
 
 function fmtTime(secs) {
   const h = String(Math.floor(secs / 3600)).padStart(2, "0");
@@ -288,116 +287,10 @@ function CollectionsTable({ navigate }) {
   );
 }
 
-// ─── DEBUG: Recent Listings Section ────────────────────────────────────────────
-function RecentListings({ listings, loading, buyNFT, isConnected, connectWallet, account }) {
-  console.log('[RecentListings] Render:', { listingsCount: listings?.length, loading, isConnected, account })
-  
-  if (loading) {
-    console.log('[RecentListings] Showing loading state')
-    return (
-      <section className="px-6 py-12">
-        <h2 className="text-xl font-bold text-white mb-6">Recent Listings</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {[...Array(10)].map((_, i) => (
-            <div key={i} className="bg-[#0b121d] rounded-2xl h-72 animate-pulse border border-white/5" />
-          ))}
-        </div>
-      </section>
-    );
-  }
-
-  if (!listings || listings.length === 0) {
-    console.log('[RecentListings] No listings to display')
-    return (
-      <section className="px-6 py-12">
-        <h2 className="text-xl font-bold text-white mb-6">Recent Listings</h2>
-        <div className="text-center py-12 text-gray-500 border border-dashed border-gray-700 rounded-2xl">
-          <p className="mb-2">No active listings found.</p>
-          <p className="text-sm">isConnected: {isConnected ? 'yes' : 'no'} | account: {account || 'none'}</p>
-          <button 
-            onClick={connectWallet}
-            className="mt-4 px-4 py-2 bg-cyan-500 text-black rounded-lg text-sm font-bold"
-          >
-            Connect Wallet
-          </button>
-        </div>
-      </section>
-    );
-  }
-
-  console.log('[RecentListings] Rendering', listings.length, 'listings')
-
-  return (
-    <section className="px-6 py-12 fade-up">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold tracking-tight" style={{ color: "#e6edf3" }}>
-          Recent Listings
-        </h2>
-        <span className="text-sm text-gray-500">
-          {listings.length} active
-        </span>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {listings.map((nft) => (
-          <div 
-            key={nft.listingId} 
-            className="bg-[#0b121d] rounded-2xl p-4 border border-white/5 hover:border-cyan-400/30 transition-colors"
-          >
-            <img 
-              src={nft.image || "/placeholder-cat.png"} 
-              alt={nft.name || `NFT #${nft.tokenId}`} 
-              className="w-full aspect-square object-cover rounded-xl mb-3" 
-            />
-            <h3 className="text-white font-bold truncate mb-1">
-              {nft.name || `Unidentified NFT #${nft.tokenId}`}
-            </h3>
-            {nft.metadata?.collection && (
-              <p className="text-xs text-gray-500 truncate mb-2">
-                {nft.metadata.collection}
-              </p>
-            )}
-            <div className="flex justify-between items-center mt-3">
-              <span className="text-cyan-400 font-mono font-bold">
-                {nft.displayPrice} USD
-              </span>
-              <button 
-                onClick={() => isConnected ? buyNFT(nft) : connectWallet()}
-                className="bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-1.5 rounded-lg text-sm font-black transition-all active:scale-95"
-              >
-                {isConnected ? 'BUY' : 'CONNECT'}
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 // ─── MAIN MARKET PAGE ─────────────────────────────────────────────────────────
 export default function Market() {
   const navigate = useNavigate();
   const { collections, isLoading: collectionsLoading } = useCollections("volume_total");
-  const { 
-    listings, 
-    loading: listingsLoading, 
-    buyNFT, 
-    isConnected, 
-    connectWallet,
-    account,
-    wrongNetwork,
-    chainId
-  } = useMarketplace();
-
-  // Debug output at page level
-  console.log('[Market] Page render:', { 
-    listingsCount: listings?.length, 
-    listingsLoading, 
-    isConnected, 
-    wrongNetwork, 
-    chainId,
-    account 
-  })
 
   return (
     <div className="min-h-screen bg-[#03080f]">
@@ -410,16 +303,6 @@ export default function Market() {
       )}
 
       <LiveMints navigate={navigate} />
-
-      {/* DEBUG: Force render even if not connected */}
-      <RecentListings 
-        listings={listings}
-        loading={listingsLoading}
-        buyNFT={buyNFT}
-        isConnected={isConnected}
-        connectWallet={connectWallet}
-        account={account}
-      />
 
       <CollectionsTable navigate={navigate} />
     </div>
