@@ -54,7 +54,6 @@ function useCountdown(isoTime) {
   return fmtTime(secs);
 }
 
-// --- HERO CAROUSEL COMPONENT ---
 function HeroCarousel({ collections, navigate }) {
   const [current, setCurrent] = useState(0);
   const featured = collections.slice(0, 5);
@@ -289,50 +288,12 @@ function CollectionsTable({ navigate }) {
   );
 }
 
-// ─── NEW: Individual NFT Listing Card ─────────────────────────────────────────
-function ListingCard({ nft, onBuy, isConnected, connectWallet }) {
-  return (
-    <div className="bg-[#0b121d] rounded-2xl p-4 border border-white/5 hover:border-cyan-400/30 transition-colors">
-      {/* Dynamic Image from Supabase join */}
-      <img 
-        src={nft.image || "/placeholder-cat.png"} 
-        alt={nft.name || `NFT #${nft.tokenId}`} 
-        className="w-full aspect-square object-cover rounded-xl mb-3" 
-      />
-      
-      {/* Dynamic Name */}
-      <h3 className="text-white font-bold truncate mb-1">
-        {nft.name || `Unidentified NFT #${nft.tokenId}`}
-      </h3>
-      
-      {/* Collection hint (if available in metadata) */}
-      {nft.metadata?.collection && (
-        <p className="text-xs text-gray-500 truncate mb-2">
-          {nft.metadata.collection}
-        </p>
-      )}
-      
-      <div className="flex justify-between items-center mt-3">
-        {/* Dynamic Price - uses displayPrice for human readable */}
-        <span className="text-cyan-400 font-mono font-bold">
-          {nft.displayPrice} USD
-        </span>
-        
-        <button 
-          onClick={() => isConnected ? onBuy(nft) : connectWallet()}
-          disabled={!isConnected}
-          className="bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-1.5 rounded-lg text-sm font-black transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isConnected ? 'BUY' : 'CONNECT'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── NEW: Recent Listings Section ─────────────────────────────────────────────
-function RecentListings({ listings, loading, buyNFT, isConnected, connectWallet }) {
+// ─── DEBUG: Recent Listings Section ────────────────────────────────────────────
+function RecentListings({ listings, loading, buyNFT, isConnected, connectWallet, account }) {
+  console.log('[RecentListings] Render:', { listingsCount: listings?.length, loading, isConnected, account })
+  
   if (loading) {
+    console.log('[RecentListings] Showing loading state')
     return (
       <section className="px-6 py-12">
         <h2 className="text-xl font-bold text-white mb-6">Recent Listings</h2>
@@ -345,16 +306,26 @@ function RecentListings({ listings, loading, buyNFT, isConnected, connectWallet 
     );
   }
 
-  if (!listings.length) {
+  if (!listings || listings.length === 0) {
+    console.log('[RecentListings] No listings to display')
     return (
       <section className="px-6 py-12">
         <h2 className="text-xl font-bold text-white mb-6">Recent Listings</h2>
-        <div className="text-center py-12 text-gray-500">
-          No active listings found. Be the first to list an NFT!
+        <div className="text-center py-12 text-gray-500 border border-dashed border-gray-700 rounded-2xl">
+          <p className="mb-2">No active listings found.</p>
+          <p className="text-sm">isConnected: {isConnected ? 'yes' : 'no'} | account: {account || 'none'}</p>
+          <button 
+            onClick={connectWallet}
+            className="mt-4 px-4 py-2 bg-cyan-500 text-black rounded-lg text-sm font-bold"
+          >
+            Connect Wallet
+          </button>
         </div>
       </section>
     );
   }
+
+  console.log('[RecentListings] Rendering', listings.length, 'listings')
 
   return (
     <section className="px-6 py-12 fade-up">
@@ -368,13 +339,35 @@ function RecentListings({ listings, loading, buyNFT, isConnected, connectWallet 
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
         {listings.map((nft) => (
-          <ListingCard 
+          <div 
             key={nft.listingId} 
-            nft={nft} 
-            onBuy={buyNFT}
-            isConnected={isConnected}
-            connectWallet={connectWallet}
-          />
+            className="bg-[#0b121d] rounded-2xl p-4 border border-white/5 hover:border-cyan-400/30 transition-colors"
+          >
+            <img 
+              src={nft.image || "/placeholder-cat.png"} 
+              alt={nft.name || `NFT #${nft.tokenId}`} 
+              className="w-full aspect-square object-cover rounded-xl mb-3" 
+            />
+            <h3 className="text-white font-bold truncate mb-1">
+              {nft.name || `Unidentified NFT #${nft.tokenId}`}
+            </h3>
+            {nft.metadata?.collection && (
+              <p className="text-xs text-gray-500 truncate mb-2">
+                {nft.metadata.collection}
+              </p>
+            )}
+            <div className="flex justify-between items-center mt-3">
+              <span className="text-cyan-400 font-mono font-bold">
+                {nft.displayPrice} USD
+              </span>
+              <button 
+                onClick={() => isConnected ? buyNFT(nft) : connectWallet()}
+                className="bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-1.5 rounded-lg text-sm font-black transition-all active:scale-95"
+              >
+                {isConnected ? 'BUY' : 'CONNECT'}
+              </button>
+            </div>
+          </div>
         ))}
       </div>
     </section>
@@ -390,12 +383,24 @@ export default function Market() {
     loading: listingsLoading, 
     buyNFT, 
     isConnected, 
-    connectWallet 
+    connectWallet,
+    account,
+    wrongNetwork,
+    chainId
   } = useMarketplace();
+
+  // Debug output at page level
+  console.log('[Market] Page render:', { 
+    listingsCount: listings?.length, 
+    listingsLoading, 
+    isConnected, 
+    wrongNetwork, 
+    chainId,
+    account 
+  })
 
   return (
     <div className="min-h-screen bg-[#03080f]">
-      {/* 1. HERO CAROUSEL */}
       {collectionsLoading ? (
         <div className="w-full h-[65vh] bg-[#0b121d] animate-pulse flex items-center justify-center">
           <div className="text-cyan-400 font-black text-2xl animate-bounce">NYAN</div>
@@ -404,19 +409,18 @@ export default function Market() {
         <HeroCarousel collections={collections} navigate={navigate} />
       )}
 
-      {/* 2. LIVE MINTS */}
       <LiveMints navigate={navigate} />
 
-      {/* 3. RECENT LISTINGS - NEW: Uses useMarketplace */}
+      {/* DEBUG: Force render even if not connected */}
       <RecentListings 
         listings={listings}
         loading={listingsLoading}
         buyNFT={buyNFT}
         isConnected={isConnected}
         connectWallet={connectWallet}
+        account={account}
       />
 
-      {/* 4. COLLECTIONS TABLE */}
       <CollectionsTable navigate={navigate} />
     </div>
   );
