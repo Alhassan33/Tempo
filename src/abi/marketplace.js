@@ -1,12 +1,13 @@
+/** 
+ * Tempo Marketplace ABI - Updated Version (with maxPrice, royalties, fees, etc.)
+ * This is the new upgraded contract ABI you provided
+ */
 export const MARKETPLACE_ABI = [
-  // Constructor
   {
     "inputs": [],
     "stateMutability": "nonpayable",
     "type": "constructor"
   },
-
-  // Main Functions
   {
     "inputs": [
       { "internalType": "uint256", "name": "listingId", "type": "uint256" },
@@ -164,7 +165,7 @@ export const MARKETPLACE_ABI = [
     "type": "function"
   },
 
-  // View Functions
+  // View functions
   {
     "inputs": [],
     "name": "activeListingCount",
@@ -187,9 +188,7 @@ export const MARKETPLACE_ABI = [
     "type": "function"
   },
   {
-    "inputs": [
-      { "internalType": "uint256", "name": "listingId", "type": "uint256" }
-    ],
+    "inputs": [{ "internalType": "uint256", "name": "listingId", "type": "uint256" }],
     "name": "getListing",
     "outputs": [
       {
@@ -209,9 +208,7 @@ export const MARKETPLACE_ABI = [
     "type": "function"
   },
   {
-    "inputs": [
-      { "internalType": "uint256", "name": "", "type": "uint256" }
-    ],
+    "inputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "name": "listings",
     "outputs": [
       { "internalType": "address", "name": "seller", "type": "address" },
@@ -273,9 +270,7 @@ export const MARKETPLACE_ABI = [
     "type": "function"
   },
   {
-    "inputs": [
-      { "internalType": "uint256", "name": "listingId", "type": "uint256" }
-    ],
+    "inputs": [{ "internalType": "uint256", "name": "listingId", "type": "uint256" }],
     "name": "quoteBuyCost",
     "outputs": [
       { "internalType": "uint256", "name": "price", "type": "uint256" },
@@ -313,20 +308,6 @@ export const MARKETPLACE_ABI = [
     "name": "UPGRADE_INTERFACE_VERSION",
     "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
     "stateMutability": "view",
-    "type": "function"
-  },
-
-  // onERC721Received (for safe transfers)
-  {
-    "inputs": [
-      { "internalType": "address", "name": "", "type": "address" },
-      { "internalType": "address", "name": "", "type": "address" },
-      { "internalType": "uint256", "name": "", "type": "uint256" },
-      { "internalType": "bytes", "name": "", "type": "bytes" }
-    ],
-    "name": "onERC721Received",
-    "outputs": [{ "internalType": "bytes4", "name": "", "type": "bytes4" }],
-    "stateMutability": "pure",
     "type": "function"
   },
 
@@ -473,22 +454,19 @@ export const MARKETPLACE_ABI = [
     ],
     "name": "Upgraded",
     "type": "event"
-  },
+  }
+];
 
-  // Errors (for better error handling in your app)
-  { "inputs": [{ "internalType": "address", "name": "target", "type": "address" }], "name": "AddressEmptyCode", "type": "error" },
-  { "inputs": [{ "internalType": "address", "name": "account", "type": "address" }], "name": "AddressInsufficientBalance", "type": "error" },
-  { "inputs": [{ "internalType": "address", "name": "implementation", "type": "address" }], "name": "ERC1967InvalidImplementation", "type": "error" },
-  { "inputs": [], "name": "ERC1967NonPayable", "type": "error" },
-  { "inputs": [], "name": "EnforcedPause", "type": "error" },
-  { "inputs": [], "name": "ExpectedPause", "type": "error" },
-  { "inputs": [], "name": "FailedInnerCall", "type": "error" },
-  { "inputs": [], "name": "InvalidInitialization", "type": "error" },
-  { "inputs": [], "name": "NotInitializing", "type": "error" },
-  { "inputs": [{ "internalType": "address", "name": "owner", "type": "address" }], "name": "OwnableInvalidOwner", "type": "error" },
-  { "inputs": [{ "internalType": "address", "name": "account", "type": "address" }], "name": "OwnableUnauthorizedAccount", "type": "error" },
-  { "inputs": [], "name": "ReentrancyGuardReentrantCall", "type": "error" },
-  { "inputs": [{ "internalType": "address", "name": "token", "type": "address" }], "name": "SafeERC20FailedOperation", "type": "error" },
-  { "inputs": [], "name": "UUPSUnauthorizedCallContext", "type": "error" },
-  { "inputs": [{ "internalType": "bytes32", "name": "slot", "type": "bytes32" }], "name": "UUPSUnsupportedProxiableUUID", "type": "error" }
+/** Standard ERC721 (NFT) ABI for approvals and checking ownership */
+export const ERC721_ABI = [
+  { "inputs": [{ "name": "to", "type": "address" }, { "name": "tokenId", "type": "uint256" }], "name": "approve", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+  { "inputs": [{ "name": "owner", "type": "address" }], "name": "balanceOf", "outputs": [{ "type": "uint256" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [{ "name": "tokenId", "type": "uint256" }], "name": "ownerOf", "outputs": [{ "type": "address" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [], "name": "totalSupply", "outputs": [{ "type": "uint256" }], "stateMutability": "view", "type": "function" }
+];
+
+/** Standard ERC20 (pathUSD) ABI for spending/approvals */
+export const ERC20_ABI = [
+  { "inputs": [{ "name": "account", "type": "address" }], "name": "balanceOf", "outputs": [{ "type": "uint256" }], "stateMutability": "view", "type": "function" },
+  { "inputs": [{ "name": "spender", "type": "address" }, { "name": "amount", "type": "uint256" }], "name": "approve", "outputs": [{ "type": "bool" }], "stateMutability": "nonpayable", "type": "function" }
 ];
