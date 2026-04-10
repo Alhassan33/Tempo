@@ -51,6 +51,14 @@ export interface Listing {
   created_at: string;
 }
 
+/ ─── NEW: Collection Stats Type ───────────────────────────────────────────────
+export interface CollectionStats {
+  totalSupply: number;
+  uniqueOwners: number;
+  floorPrice: number;
+  listedCount: number;
+}
+
 // ─── 1. useCollections ────────────────────────────────────────────────────────
 // Fetch all collections for the marketplace table
 export function useCollections(sortBy: string = "volume_total") {
@@ -104,7 +112,73 @@ export function useCollection(slugOrAddress: string) {
   return { collection, isLoading, error };
 }
 
-// ─── 3. useFeaturedProjects ───────────────────────────────────────────────────
+// ─── 3: useCollectionStats ──────────────────────────────────────────────────
+// Fetch real-time stats (supply, owners, floor, listed) from RPC
+export function useCollectionStats(contractAddress: string) {
+  const [stats, setStats] = useState<CollectionStats>({
+    totalSupply: 0,
+    uniqueOwners: 0,
+    floorPrice: 0,
+    listedCount: 0
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Safety check for invalid addresses
+    if (!contractAddress || contractAddress === 'undefined' || contractAddress === 'null') {
+      setIsLoading(false);
+      return;
+    }
+    
+    async function fetch() {
+      setIsLoading(true);
+      setError(null);
+      
+      try {
+        const { data, error: rpcError } = await supabase
+          .rpc('get_collection_stats', {
+            // Force lowercase for consistent matching
+            collection_address: contractAddress.toLowerCase()
+          });
+        
+        if (rpcError) {
+          throw new Error(rpcError.message);
+        }
+        
+        // RPC returns an array, grab first row
+        if (data && Array.isArray(data) && data.length > 0) {
+          const row = data[0];
+          setStats({
+            totalSupply: Number(row.total_supply) || 0,
+            uniqueOwners: Number(row.unique_owners) || 0,
+            floorPrice: Number(row.floor_price) || 0,
+            listedCount: Number(row.listed_count) || 0
+          });
+        } else {
+          // No data found — reset to zeros
+          setStats({
+            totalSupply: 0,
+            uniqueOwners: 0,
+            floorPrice: 0,
+            listedCount: 0
+          });
+        }
+      } catch (err: any) {
+        console.error('[useCollectionStats] Error:', err);
+        setError(err.message || 'Failed to fetch collection stats');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    
+    fetch();
+  }, [contractAddress]);
+
+  return { stats, isLoading, error };
+}
+
+// ─── 4. useFeaturedProjects ───────────────────────────────────────────────────
 // Fetch featured/live projects for the launchpad page
 export function useFeaturedProjects() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -130,27 +204,42 @@ export function useFeaturedProjects() {
   return { projects, isLoading, error };
 }
 
-// ─── 4. useListings ──────────────────────────────────────────────────────────
-// Fetch active listings for a specific NFT contract
+// ─── 5. useListings ──────────────────────────────────────────────────────────
+// Fetch active listings WITH NFT metadata via our custom RPC
 export function useListings(nftContract: string) {
-  const [listings, setListings] = useState<Listing[]>([]);
+  const [listings, setListings] = useState<any[]>([]); 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!nftContract) return;
+    if (!nftContract || nftContract === 'undefined') return;
+    
     async function fetch() {
       setIsLoading(true);
-      const { data, error } = await supabase
-        .from("listings")
-        .select("*")
-        .eq("nft_contract", nftContract)
-        .eq("active", true)
-        .order("price", { ascending: true });
+      try {
+        // Use the RPC we built to join Listings + NFTs
+        const { data, error: rpcError } = await supabase
+          .rpc('get_active_listings_with_nfts');
 
-      if (error) setError(error.message);
-      else setListings(data || []);
-      setIsLoading(false);
+        if (rpcError) throw rpcError;
+
+        if (data) {
+          // Filter by contract in the frontend (solves the case-sensitivity issue)
+          const filtered = data.filter((item: any) => 
+            item.nft_contract?.toLowerCase() === nftContract.toLowerCase()
+          ).map((item: any) => ({
+            ...item,
+            nftAddress: item.nft_contract, // Consistency map
+            displayPrice: (Number(item.price) / 1e6).toFixed(2),
+          }));
+            
+          setListings(filtered);
+        }
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
     }
     fetch();
   }, [nftContract]);
@@ -158,7 +247,7 @@ export function useListings(nftContract: string) {
   return { listings, isLoading, error };
 }
 
-// ─── 5. useSubmitProject ──────────────────────────────────────────────────────
+// ─── 6. useSubmitProject ──────────────────────────────────────────────────────
 // Submit a launchpad application
 export function useSubmitProject() {
   const [isLoading, setIsLoading] = useState(false);
@@ -182,7 +271,7 @@ export function useSubmitProject() {
   return { submit, isLoading, isSuccess, error };
 }
 
-// ─── 6. useAdminProjects ─────────────────────────────────────────────────────
+// ─── 7. useAdminProjects ─────────────────────────────────────────────────────
 // Fetch ALL projects for the admin/manage page (pending + all statuses)
 export function useAdminProjects() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -241,7 +330,7 @@ export function useAdminProjects() {
   return { projects, isLoading, error, updateStatus, featureProject };
 }
 
-// ─── 7. useRealtimeListings ───────────────────────────────────────────────────
+// ─── 8. useRealtimeListings ───────────────────────────────────────────────────
 // Subscribe to real-time listing updates for a collection
 export function useRealtimeListings(nftContract: string) {
   const { listings, isLoading, error } = useListings(nftContract);
