@@ -208,7 +208,7 @@ export default function NFTItemPage() {
   const [showBuy,   setShowBuy]   = useState(false);
   const [showOffer, setShowOffer] = useState(false);
   const [showList,  setShowList]  = useState(false);
-  const [showDelist, setShowDelist] = useState(false);
+  const [showDelist, setShowDelist] = useState(false); // ← NEW
   const [liked,     setLiked]     = useState(false);
   const [shared,    setShared]    = useState(false);
 
@@ -338,6 +338,7 @@ export default function NFTItemPage() {
                   <div className="text-xs mt-1" style={{ color: "#9da7b3" }}>Listed by {shortenAddress(listing.seller)}</div>
                 </div>
                 {isOwner ? (
+                  // ← CHANGED: Show "Cancel Listing" button that opens DelistModal
                   <button 
                     onClick={() => setShowDelist(true)} 
                     className="w-full h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
@@ -369,8 +370,8 @@ export default function NFTItemPage() {
                   )}
                   <button onClick={() => setShowOffer(true)} className="flex-1 h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
                     style={{ background: "rgba(167,139,250,0.1)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.3)", cursor: "pointer" }}>
-                      <Gavel size={14} /> Make Offer
-                    </button>
+                    <Gavel size={14} /> Make Offer
+                  </button>
                 </div>
               </div>
             )}
@@ -458,6 +459,7 @@ export default function NFTItemPage() {
           onClose={() => setShowList(false)}
         />
       )}
+      {/* ← NEW: DelistModal */}
       {showDelist && listing && (
         <DelistModal
           nft={{
