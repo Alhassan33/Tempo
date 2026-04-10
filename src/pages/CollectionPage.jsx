@@ -1,18 +1,18 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { CheckCircle2, ExternalLink, Twitter, Globe, TrendingDown, TrendingUp } from "lucide-react";
-// ✅ IMPORT UPDATED: Added useCollectionStats to your existing imports
 import { useCollection, useRealtimeListings, useCollectionStats } from "@/hooks/useSupabase";
 import NFTImage from "@/components/NFTImage.jsx";
 import { CardSkeleton } from "@/components/Skeleton.jsx";
 import { extractImageUrl } from "@/utils/nftImageUtils.js";
 import ActivityFeed from "@/components/ActivityFeed.jsx";
+import Listings from "@/components/Listings.jsx";
 
-const TABS = ["Items", "Activity", "Bids", "Analytics"];
+// ✅ "Listings" tab added
+const TABS = ["Items", "Listings", "Activity", "Bids", "Analytics"];
 const EXPLORER_BASE = "https://explore.tempo.xyz";
 const PAGE_SIZE = 50;
 
-// ─── Stat Card ────────────────────────────────────────────────────────────────
 const StatItem = ({ label, value, subValue, isTrend }) => (
   <div className="rounded-2xl p-4" style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.05)" }}>
     <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#9da7b3" }}>{label}</div>
@@ -22,9 +22,7 @@ const StatItem = ({ label, value, subValue, isTrend }) => (
         <div className={`text-[11px] font-bold flex items-center gap-0.5 ${
           isTrend ? (subValue.includes('-') ? 'text-red-400' : 'text-green-400') : ''
         }`} style={!isTrend ? { color: "#9da7b3" } : {}}>
-          {isTrend && (subValue.includes('-')
-            ? <TrendingDown size={11} />
-            : <TrendingUp size={11} />)}
+          {isTrend && (subValue.includes('-') ? <TrendingDown size={11} /> : <TrendingUp size={11} />)}
           {subValue}
         </div>
       )}
@@ -32,11 +30,13 @@ const StatItem = ({ label, value, subValue, isTrend }) => (
   </div>
 );
 
-// ─── NFT Grid Item ────────────────────────────────────────────────────────────
 function NFTGridItem({ token, collectionName, slug, listing }) {
+  const price = listing
+    ? (listing.displayPrice || (Number(listing.price) / 1e6).toFixed(2))
+    : null;
+
   return (
-    <Link
-      to={`/collection/${slug}/${token.tokenId}`}
+    <Link to={`/collection/${slug}/${token.tokenId}`}
       className="block rounded-2xl overflow-hidden card-hover p-2"
       style={{ background: "#121821", border: listing ? "1px solid rgba(34,211,238,0.2)" : "1px solid rgba(255,255,255,0.05)" }}>
       <div className="relative">
@@ -53,9 +53,9 @@ function NFTGridItem({ token, collectionName, slug, listing }) {
           {collectionName}
         </div>
         <div className="text-sm font-bold truncate" style={{ color: "#e6edf3" }}>{token.name}</div>
-        {listing && (
+        {price && (
           <div className="font-mono text-xs font-bold mt-0.5" style={{ color: "#22d3ee" }}>
-            {Number(listing.displayPrice || listing.price / 1e6).toFixed(2)} USD
+            {price} USD
           </div>
         )}
       </div>
@@ -65,59 +65,52 @@ function NFTGridItem({ token, collectionName, slug, listing }) {
 
 export default function CollectionPage() {
   const { id } = useParams();
-  
-  // 1. Get collection profile data
   const { collection, isLoading: colLoading } = useCollection(id);
-
-  // 2. ✅ INTEGRATED: Get real-time stats from the RPC hook we just built
   const { stats: rpcStats } = useCollectionStats(collection?.contract_address || "");
-
-  // 3. Get live listing data
   const { listings } = useRealtimeListings(collection?.contract_address);
 
-  // Build a fast lookup: tokenId → listing
+  const activeListings = useMemo(() =>
+    (listings || []).filter(l => l.active), [listings]);
+
+  // tokenId → listing (both string and number keys for safety)
   const listingMap = useMemo(() => {
     const m = {};
-    (listings || []).forEach(l => { if (l.active) m[Number(l.token_id)] = l; });
+    activeListings.forEach(l => {
+      m[String(l.token_id)] = l;
+      m[Number(l.token_id)] = l;
+    });
     return m;
-  }, [listings]);
+  }, [activeListings]);
 
-  const [tokens, setTokens]           = useState([]);
+  const [tokens, setTokens]               = useState([]);
   const [tokensLoading, setTokensLoading] = useState(false);
-  const [page, setPage]               = useState(1);
-  const [hasMore, setHasMore]         = useState(true);
-  const [tab, setTab]                 = useState("Items");
-  const loaderRef                     = useRef(null);
+  const [page, setPage]                   = useState(1);
+  const [hasMore, setHasMore]             = useState(true);
+  const [tab, setTab]                     = useState("Items");
+  const loaderRef                         = useRef(null);
 
-  // ✅ UPDATED STATS: Prioritizing the RPC values over the table data
   const stats = useMemo(() => {
-    // Favor rpcStats (Live) -> collection table (Fallback) -> 0
-    const supply = rpcStats.totalSupply || collection?.total_supply || 0;
-    const floorPrice = rpcStats.floorPrice || collection?.floor_price || 0;
-    const owners = rpcStats.uniqueOwners || collection?.owners || 0;
-    const listed = rpcStats.listedCount || listings.filter(l => l.active).length;
+    const supply     = rpcStats.totalSupply  || collection?.total_supply || 0;
+    const floorPrice = rpcStats.floorPrice   || collection?.floor_price  || 0;
+    const owners     = rpcStats.uniqueOwners || collection?.owners       || 0;
+    const listed     = rpcStats.listedCount  || activeListings.length;
     const royaltyBps = collection?.royalty_bps ?? 0;
 
     return {
       floor:     floorPrice > 0 ? `${Number(floorPrice).toFixed(2)} USD` : "—",
       topOffer:  collection?.top_offer ? `${Number(collection.top_offer).toFixed(2)} USD` : "—",
-      vol24h:    collection?.volume_24h ? `${Number(collection.volume_24h).toFixed(2)} USD` : "0 USD",
+      vol24h:    collection?.volume_24h   ? `${Number(collection.volume_24h).toFixed(2)} USD`   : "0 USD",
       totalVol:  collection?.volume_total ? `${Number(collection.volume_total).toFixed(2)} USD` : "0 USD",
-      mktCap:    floorPrice && supply
-        ? `${(Number(floorPrice) * supply).toLocaleString()} USD`
-        : "—",
-      owners:    owners,
-      ownerPct:  supply && owners
-        ? `${((owners / supply) * 100).toFixed(1)}%`
-        : "0%",
+      mktCap:    floorPrice && supply ? `${(Number(floorPrice) * supply).toLocaleString()} USD` : "—",
+      owners,
+      ownerPct:  supply && owners ? `${((owners / supply) * 100).toFixed(1)}%` : "0%",
       listed,
       listedPct: supply ? `${((listed / supply) * 100).toFixed(1)}% listed` : "",
       supply:    supply?.toLocaleString() || "0",
       royalties: royaltyBps ? `${(royaltyBps / 100).toFixed(1)}%` : "0%",
     };
-  }, [collection, listings, rpcStats]); // Re-run when live stats arrive
+  }, [collection, activeListings, rpcStats]);
 
-  // ─── Fetch tokens from IPFS in pages ─────────────────────────────────────
   const fetchPage = useCallback(async (pageNum) => {
     if (!collection?.metadata_base_uri) return;
 
@@ -125,7 +118,6 @@ export default function CollectionPage() {
     if (base.startsWith("ipfs://")) base = base.replace("ipfs://", "https://gateway.lighthouse.storage/ipfs/");
     if (!base.endsWith("/")) base += "/";
 
-    // Use live supply for total pagination count
     const supply = rpcStats.totalSupply || collection.total_supply || 2000;
     const start = (pageNum - 1) * PAGE_SIZE + 1;
     const end   = Math.min(start + PAGE_SIZE - 1, supply);
@@ -150,7 +142,6 @@ export default function CollectionPage() {
     setTokensLoading(false);
   }, [collection, rpcStats.totalSupply]);
 
-  // Load first page when collection loads
   useEffect(() => {
     if (collection?.metadata_base_uri) {
       setTokens([]);
@@ -160,25 +151,18 @@ export default function CollectionPage() {
     }
   }, [collection?.metadata_base_uri, fetchPage]);
 
-  // Load next page
-  useEffect(() => {
-    if (page > 1) fetchPage(page);
-  }, [page, fetchPage]);
+  useEffect(() => { if (page > 1) fetchPage(page); }, [page, fetchPage]);
 
-  // ─── Infinite scroll via IntersectionObserver ─────────────────────────────
   useEffect(() => {
     if (!loaderRef.current) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !tokensLoading) {
-          setPage(p => p + 1);
-        }
-      },
-      { rootMargin: "200px" }
-    );
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore && !tokensLoading && tab === "Items") {
+        setPage(p => p + 1);
+      }
+    }, { rootMargin: "200px" });
     observer.observe(loaderRef.current);
     return () => observer.disconnect();
-  }, [hasMore, tokensLoading]);
+  }, [hasMore, tokensLoading, tab]);
 
   if (colLoading) return (
     <div className="flex items-center justify-center min-h-[60vh]">
@@ -190,7 +174,6 @@ export default function CollectionPage() {
   return (
     <div className="fade-up min-h-screen pb-20" style={{ background: "#0b0f14" }}>
 
-      {/* Banner */}
       <div className="relative h-56 w-full overflow-hidden">
         {collection?.banner_url
           ? <img src={collection.banner_url} className="w-full h-full object-cover opacity-60" alt="Banner" />
@@ -238,7 +221,7 @@ export default function CollectionPage() {
           </div>
         </div>
 
-        {/* Stats Grid */}
+        {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
           <StatItem label="Floor Price"  value={stats.floor}    subValue={null} />
           <StatItem label="Top Offer"    value={stats.topOffer} />
@@ -252,22 +235,27 @@ export default function CollectionPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-6 border-b mb-6" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+        <div className="flex gap-1 overflow-x-auto border-b mb-6" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
           {TABS.map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className="pb-4 text-sm font-bold uppercase tracking-widest border-b-2 transition-all"
+              className="pb-4 px-3 text-sm font-bold uppercase tracking-widest whitespace-nowrap transition-all"
               style={{
-                background: "none", border: "none",
-                borderBottom: tab === t ? "2px solid #22d3ee" : "2px solid transparent",
+                background: "none", border: "none", cursor: "pointer",
                 color: tab === t ? "#22d3ee" : "#9da7b3",
-                cursor: "pointer",
+                borderBottom: tab === t ? "2px solid #22d3ee" : "2px solid transparent",
               }}>
               {t}
+              {t === "Listings" && activeListings.length > 0 && (
+                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full font-mono"
+                  style={{ background: "rgba(34,211,238,0.12)", color: "#22d3ee" }}>
+                  {activeListings.length}
+                </span>
+              )}
             </button>
           ))}
         </div>
 
-        {/* Items Tab */}
+        {/* Items */}
         {tab === "Items" && (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -282,10 +270,7 @@ export default function CollectionPage() {
               ))}
               {tokensLoading && Array(10).fill(0).map((_, i) => <CardSkeleton key={`sk-${i}`} />)}
             </div>
-
-            {/* Infinite scroll trigger */}
             <div ref={loaderRef} className="h-10" />
-
             {!hasMore && tokens.length > 0 && (
               <div className="text-center py-8 text-sm" style={{ color: "#9da7b3" }}>
                 All {tokens.length} items loaded
@@ -294,13 +279,22 @@ export default function CollectionPage() {
           </>
         )}
 
+        {/* ✅ Listings tab */}
+        {tab === "Listings" && (
+          <Listings
+            nftContract={collection?.contract_address}
+            collectionName={collection?.name}
+            slug={id}
+          />
+        )}
+
         {tab === "Activity" && (
           <ActivityFeed collectionId={id} nftContract={collection?.contract_address} limit={40} />
         )}
 
-        {tab !== "Items" && tab !== "Activity" && (
+        {(tab === "Bids" || tab === "Analytics") && (
           <div className="py-20 text-center text-sm" style={{ color: "#9da7b3" }}>
-            {tab} coming soon — data is being indexed from Tempo chain.
+            {tab} coming soon.
           </div>
         )}
       </div>
