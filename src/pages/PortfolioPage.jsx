@@ -67,7 +67,7 @@ function NFTGridItem({ token, collectionName, slug, listing }) {
 export default function CollectionPage() {
   const { id } = useParams();
   const { collection, isLoading: colLoading } = useCollection(id);
-  const { listings } = useRealtimeListings(collection?.contract_address);
+  const { listings: rawListings, isLoading: listingsLoading } = useRealtimeListings(id);
 
   // ✅ HOISTING LOGIC: Extract active listings and create a Set for fast exclusion
   const activeListings = useMemo(() => {
