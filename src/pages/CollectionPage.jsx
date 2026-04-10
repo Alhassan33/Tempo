@@ -1,19 +1,18 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { CheckCircle2, ExternalLink, Twitter, Globe, TrendingDown, TrendingUp, ShoppingCart, AlertCircle } from "lucide-react";
+import { CheckCircle2, ExternalLink, Twitter, Globe, TrendingDown, TrendingUp } from "lucide-react";
 import { useCollection, useRealtimeListings, useCollectionStats } from "@/hooks/useSupabase";
 import NFTImage from "@/components/NFTImage.jsx";
 import { CardSkeleton } from "@/components/Skeleton.jsx";
 import { extractImageUrl } from "@/utils/nftImageUtils.js";
 import ActivityFeed from "@/components/ActivityFeed.jsx";
-import { useAccount } from "wagmi";
-import { useMarketplace } from "@/hooks/useMarketplace";
+import BuyModal from "@/components/BuyModal.jsx";
 
-const TABS        = ["Items", "Activity", "Bids", "Analytics"];
+const TABS = ["Items", "Activity", "Bids", "Analytics"];
 const EXPLORER_BASE = "https://explore.tempo.xyz";
-const PAGE_SIZE   = 50;
+const PAGE_SIZE = 50;
 
-// ─── Stat Card — UNTOUCHED ────────────────────────────────────────────────────
+// ─── Stat Card ────────────────────────────────────────────────────────────────
 const StatItem = ({ label, value, subValue, isTrend }) => (
   <div className="rounded-2xl p-4" style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.05)" }}>
     <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#9da7b3" }}>{label}</div>
@@ -31,151 +30,61 @@ const StatItem = ({ label, value, subValue, isTrend }) => (
   </div>
 );
 
-// ─── Buy Modal ────────────────────────────────────────────────────────────────
-function BuyModal({ listing, onConfirm, onClose, loading, txStatus }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(12px)" }}
-      onClick={onClose}>
-      <div className="w-full max-w-sm rounded-2xl p-6 shadow-2xl"
-        style={{ background: "#121821", border: "1px solid rgba(34,211,238,0.15)" }}
-        onClick={e => e.stopPropagation()}>
-
-        {/* NFT preview */}
-        <div className="text-center mb-6">
-          {listing.image && (
-            <div className="w-24 h-24 rounded-2xl overflow-hidden mx-auto mb-4" style={{ background: "#161d28" }}>
-              <img src={listing.image} alt="" className="w-full h-full object-cover" />
-            </div>
-          )}
-          <div className="font-bold text-lg mb-1" style={{ color: "#e6edf3" }}>
-            {listing.name || `#${listing.token_id}`}
-          </div>
-          <div className="font-mono text-3xl font-bold" style={{ color: "#22d3ee" }}>
-            {Number(listing.price).toFixed(2)}
-            <span className="text-lg ml-1" style={{ color: "#9da7b3" }}>USD</span>
-          </div>
-          <div className="text-xs mt-1" style={{ color: "#9da7b3" }}>
-            Seller: {listing.seller?.slice(0,6)}…{listing.seller?.slice(-4)}
-          </div>
-        </div>
-
-        {/* Status */}
-        {txStatus && (
-          <div className="flex items-start gap-2 rounded-xl px-3 py-2.5 mb-4 text-xs"
-            style={{
-              background: txStatus.type === "error"   ? "rgba(239,68,68,0.1)"
-                        : txStatus.type === "success" ? "rgba(34,197,94,0.1)"
-                        : "rgba(34,211,238,0.08)",
-              border: `1px solid ${txStatus.type === "error" ? "rgba(239,68,68,0.3)" : txStatus.type === "success" ? "rgba(34,197,94,0.3)" : "rgba(34,211,238,0.25)"}`,
-              color: txStatus.type === "error" ? "#EF4444" : txStatus.type === "success" ? "#22C55E" : "#22d3ee",
-            }}>
-            {txStatus.type === "error" && <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />}
-            {txStatus.msg}
-          </div>
-        )}
-
-        {txStatus?.type === "success" ? (
-          <button onClick={onClose}
-            className="w-full h-12 rounded-xl font-bold text-sm"
-            style={{ background: "rgba(34,211,238,0.1)", color: "#22d3ee",
-              border: "1px solid rgba(34,211,238,0.3)", cursor: "pointer" }}>
-            Done 🎉
-          </button>
-        ) : (
-          <>
-            <button onClick={onConfirm} disabled={loading}
-              className="w-full h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-2 mb-3"
-              style={{ background: loading ? "#161d28" : "#22d3ee",
-                color: loading ? "#9da7b3" : "#0b0f14",
-                border: "none", cursor: loading ? "not-allowed" : "pointer",
-                fontFamily: "Syne, sans-serif" }}>
-              {loading
-                ? <><span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> Processing...</>
-                : <><ShoppingCart size={15} /> Confirm Purchase</>}
-            </button>
-            <button onClick={onClose}
-              className="w-full h-9 text-sm"
-              style={{ background: "none", color: "#9da7b3", border: "none", cursor: "pointer" }}>
-              Cancel
-            </button>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── NFT Grid Item ────────────────────────────────────────────────────────────
 function NFTGridItem({ token, collectionName, slug, listing, onBuy }) {
-  const { address } = useAccount();
-  const isOwner = listing && address?.toLowerCase() === listing.seller?.toLowerCase();
-
   return (
-    <div className="rounded-2xl overflow-hidden card-hover"
+    <div className="rounded-2xl overflow-hidden"
       style={{
         background: "#121821",
         border: listing ? "1px solid rgba(34,211,238,0.3)" : "1px solid rgba(255,255,255,0.05)",
-        boxShadow: listing ? "0 0 15px rgba(34,211,238,0.05)" : "none",
+        boxShadow: listing ? "0 0 15px rgba(34,211,238,0.05)" : "none"
       }}>
       <Link to={`/collection/${slug}/${token.tokenId}`} className="block p-2">
         <div className="relative">
           <NFTImage src={token.image} className="aspect-square rounded-xl object-cover mb-2 w-full" />
           {listing && (
             <div className="absolute top-2 left-2 text-[9px] font-bold px-2 py-0.5 rounded-lg"
-              style={{ background: "rgba(11,15,20,0.85)", color: "#22d3ee",
-                border: "1px solid rgba(34,211,238,0.4)", backdropFilter: "blur(4px)" }}>
+              style={{ background: "rgba(11,15,20,0.85)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.4)", backdropFilter: "blur(4px)" }}>
               ● FOR SALE
             </div>
           )}
         </div>
         <div className="px-1 pb-1">
-          <div className="text-[10px] font-bold uppercase tracking-tight mb-0.5 truncate"
-            style={{ color: "#9da7b3" }}>{collectionName}</div>
+          <div className="text-[10px] font-bold uppercase tracking-tight mb-0.5 truncate" style={{ color: "#9da7b3" }}>
+            {collectionName}
+          </div>
           <div className="text-sm font-bold truncate" style={{ color: "#e6edf3" }}>{token.name}</div>
           {listing && (
             <div className="font-mono text-xs font-bold mt-0.5" style={{ color: "#22d3ee" }}>
-              {Number(listing.price).toFixed(2)} USD
+              {listing.displayPrice || Number(listing.price).toFixed(2)} USD
             </div>
           )}
         </div>
       </Link>
 
-      {/* Buy button on listed cards */}
-      {listing && !isOwner && (
+      {/* Buy button directly on the card */}
+      {listing && onBuy && (
         <div className="px-2 pb-2">
           <button
             onClick={() => onBuy(listing)}
             className="w-full h-8 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
-            style={{ background: "#22d3ee", color: "#0b0f14", border: "none",
-              cursor: "pointer", fontFamily: "Syne, sans-serif" }}>
-            <ShoppingCart size={11} /> Buy Now
+            style={{ background: "#22d3ee", color: "#0b0f14", border: "none", cursor: "pointer" }}>
+            Buy Now
           </button>
-        </div>
-      )}
-      {listing && isOwner && (
-        <div className="px-2 pb-2">
-          <div className="w-full h-8 rounded-xl text-xs font-bold flex items-center justify-center"
-            style={{ background: "rgba(34,211,238,0.06)", color: "#22d3ee",
-              border: "1px solid rgba(34,211,238,0.2)" }}>
-            Your Listing
-          </div>
         </div>
       )}
     </div>
   );
 }
 
-// ─── Main CollectionPage ──────────────────────────────────────────────────────
 export default function CollectionPage() {
   const { id } = useParams();
 
-  // ✅ Stats hooks — UNTOUCHED from your working version
   const { collection, isLoading: colLoading } = useCollection(id);
   const { stats: rpcStats } = useCollectionStats(collection?.contract_address || "");
   const { listings } = useRealtimeListings(collection?.contract_address);
-  const { buyNFT, loading: buyLoading, txStatus, clearStatus } = useMarketplace();
 
+  // Active listings sorted cheapest first
   const activeListings = useMemo(() =>
     (listings || []).filter(l => l.active).sort((a, b) => Number(a.price) - Number(b.price)),
   [listings]);
@@ -185,14 +94,14 @@ export default function CollectionPage() {
   [activeListings]);
 
   const [unlistedTokens, setUnlistedTokens] = useState([]);
-  const [tokensLoading,  setTokensLoading]  = useState(false);
-  const [page,           setPage]           = useState(1);
-  const [hasMore,        setHasMore]        = useState(true);
-  const [tab,            setTab]            = useState("Items");
-  const [buyModal,       setBuyModal]       = useState(null);
-  const loaderRef = useRef(null);
+  const [tokensLoading, setTokensLoading]   = useState(false);
+  const [page, setPage]                     = useState(1);
+  const [hasMore, setHasMore]               = useState(true);
+  const [tab, setTab]                       = useState("Items");
+  const [buyModal, setBuyModal]             = useState(null); // listing to buy
+  const loaderRef                           = useRef(null);
 
-  // ✅ Stats computation — UNTOUCHED
+  // ✅ Stats — rpcStats with collection fallback
   const stats = useMemo(() => {
     const supply     = rpcStats.totalSupply  || collection?.total_supply || 0;
     const floorPrice = rpcStats.floorPrice   || collection?.floor_price  || 0;
@@ -203,8 +112,8 @@ export default function CollectionPage() {
     return {
       floor:     floorPrice > 0 ? `${Number(floorPrice).toFixed(2)} USD` : "—",
       topOffer:  collection?.top_offer ? `${Number(collection.top_offer).toFixed(2)} USD` : "—",
-      vol24h:    collection?.volume_24h    ? `${Number(collection.volume_24h).toFixed(2)} USD`    : "0 USD",
-      totalVol:  collection?.volume_total  ? `${Number(collection.volume_total).toFixed(2)} USD`  : "0 USD",
+      vol24h:    collection?.volume_24h   ? `${Number(collection.volume_24h).toFixed(2)} USD`   : "0 USD",
+      totalVol:  collection?.volume_total ? `${Number(collection.volume_total).toFixed(2)} USD` : "0 USD",
       mktCap:    floorPrice && supply ? `${(Number(floorPrice) * supply).toLocaleString()} USD` : "—",
       owners,
       ownerPct:  supply && owners ? `${((owners / supply) * 100).toFixed(1)}%` : "0%",
@@ -215,9 +124,9 @@ export default function CollectionPage() {
     };
   }, [collection, activeListings, rpcStats]);
 
-  // ✅ Fetch unlisted tokens — UNTOUCHED
   const fetchPage = useCallback(async (pageNum) => {
     if (!collection?.metadata_base_uri) return;
+
     let base = collection.metadata_base_uri;
     if (base.startsWith("ipfs://")) base = base.replace("ipfs://", "https://gateway.lighthouse.storage/ipfs/");
     if (!base.endsWith("/")) base += "/";
@@ -225,6 +134,7 @@ export default function CollectionPage() {
     const supply = rpcStats.totalSupply || collection.total_supply || 2000;
     const start  = (pageNum - 1) * PAGE_SIZE + 1;
     const end    = Math.min(start + PAGE_SIZE - 1, supply);
+
     if (start > supply) { setHasMore(false); return; }
 
     setTokensLoading(true);
@@ -250,7 +160,10 @@ export default function CollectionPage() {
 
   useEffect(() => {
     if (collection?.metadata_base_uri) {
-      setUnlistedTokens([]); setPage(1); setHasMore(true); fetchPage(1);
+      setUnlistedTokens([]);
+      setPage(1);
+      setHasMore(true);
+      fetchPage(1);
     }
   }, [collection?.metadata_base_uri, fetchPage]);
 
@@ -259,30 +172,13 @@ export default function CollectionPage() {
   useEffect(() => {
     if (!loaderRef.current) return;
     const observer = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore && !tokensLoading && tab === "Items") setPage(p => p + 1);
+      if (entries[0].isIntersecting && hasMore && !tokensLoading && tab === "Items") {
+        setPage(p => p + 1);
+      }
     }, { rootMargin: "200px" });
     observer.observe(loaderRef.current);
     return () => observer.disconnect();
   }, [hasMore, tokensLoading, tab]);
-
-  // Buy handlers
-  function handleBuyClick(listing) {
-    clearStatus();
-    setBuyModal(listing);
-  }
-
-  async function confirmBuy() {
-    if (!buyModal) return;
-    await buyNFT({
-      listingId:    String(buyModal.listing_id),
-      seller:       buyModal.seller,
-      nftAddress:   buyModal.nft_contract,
-      tokenId:      String(buyModal.token_id),
-      price:        String(buyModal.price),  // human USD → useMarketplace converts
-      displayPrice: Number(buyModal.price).toFixed(2),
-      active:       true,
-    });
-  }
 
   if (colLoading) return (
     <div className="flex items-center justify-center min-h-[60vh]">
@@ -342,24 +238,24 @@ export default function CollectionPage() {
           </div>
         </div>
 
-        {/* ✅ Stats Grid — UNTOUCHED */}
+        {/* Stats Grid — preserved from working version */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
-          <StatItem label="Floor Price" value={stats.floor}    subValue={null} />
-          <StatItem label="Top Offer"   value={stats.topOffer} />
-          <StatItem label="24H VOL"     value={stats.vol24h}   />
-          <StatItem label="Total VOL"   value={stats.totalVol} />
-          <StatItem label="Market Cap"  value={stats.mktCap}   />
-          <StatItem label="Owners"      value={stats.owners}   subValue={stats.ownerPct} />
-          <StatItem label="Listed"      value={stats.listed}   subValue={stats.listedPct} />
-          <StatItem label="Supply"      value={stats.supply}   />
-          <StatItem label="Royalties"   value={stats.royalties} />
+          <StatItem label="Floor Price"  value={stats.floor}    subValue={null} />
+          <StatItem label="Top Offer"    value={stats.topOffer} />
+          <StatItem label="24H VOL"      value={stats.vol24h}   />
+          <StatItem label="Total VOL"    value={stats.totalVol} />
+          <StatItem label="Market Cap"   value={stats.mktCap}   />
+          <StatItem label="Owners"       value={stats.owners}   subValue={stats.ownerPct} />
+          <StatItem label="Listed"       value={stats.listed}   subValue={stats.listedPct} />
+          <StatItem label="Supply"       value={stats.supply}   />
+          <StatItem label="Royalties"    value={stats.royalties} />
         </div>
 
         {/* Tabs */}
         <div className="flex gap-6 border-b mb-6" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
           {TABS.map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className="pb-4 text-sm font-bold uppercase tracking-widest border-b-2 transition-all"
+              className="pb-4 text-sm font-bold uppercase tracking-widest transition-all"
               style={{
                 background: "none", border: "none",
                 borderBottom: tab === t ? "2px solid #22d3ee" : "2px solid transparent",
@@ -371,11 +267,10 @@ export default function CollectionPage() {
           ))}
         </div>
 
-        {/* Items Tab */}
+        {/* Items — listed first (with Buy Now), then unlisted */}
         {tab === "Items" && (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-              {/* Listed first */}
               {activeListings.map(listing => (
                 <NFTGridItem
                   key={`listed-${listing.token_id}`}
@@ -387,10 +282,9 @@ export default function CollectionPage() {
                   collectionName={collection?.name}
                   slug={id}
                   listing={listing}
-                  onBuy={handleBuyClick}
+                  onBuy={l => setBuyModal({ ...l, collection_name: collection?.name })}
                 />
               ))}
-              {/* Unlisted */}
               {unlistedTokens.map(token => (
                 <NFTGridItem
                   key={`unlisted-${token.tokenId}`}
@@ -398,12 +292,11 @@ export default function CollectionPage() {
                   collectionName={collection?.name}
                   slug={id}
                   listing={null}
-                  onBuy={handleBuyClick}
+                  onBuy={null}
                 />
               ))}
               {tokensLoading && Array(10).fill(0).map((_, i) => <CardSkeleton key={`sk-${i}`} />)}
             </div>
-
             <div ref={loaderRef} className="h-10" />
             {!hasMore && (unlistedTokens.length + activeListings.length) > 0 && (
               <div className="text-center py-8 text-sm" style={{ color: "#9da7b3" }}>
@@ -419,19 +312,20 @@ export default function CollectionPage() {
 
         {tab !== "Items" && tab !== "Activity" && (
           <div className="py-20 text-center text-sm" style={{ color: "#9da7b3" }}>
-            {tab} coming soon — data is being indexed from Tempo chain.
+            {tab} coming soon.
           </div>
         )}
       </div>
 
-      {/* Buy Modal */}
+      {/* BuyModal — bottom sheet */}
       {buyModal && (
         <BuyModal
           listing={buyModal}
-          onConfirm={confirmBuy}
-          onClose={() => { setBuyModal(null); clearStatus(); }}
-          loading={buyLoading}
-          txStatus={txStatus}
+          onClose={() => setBuyModal(null)}
+          onSuccess={() => {
+            setBuyModal(null);
+            // listings will auto-update via realtime subscription
+          }}
         />
       )}
     </div>
