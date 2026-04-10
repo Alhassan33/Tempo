@@ -57,7 +57,8 @@ export interface CollectionStats {
   uniqueOwners: number;
   floorPrice: number;
   listedCount: number;
-  volume24h?: number; 
+  volume24h?: number;
+  royalties?: number; 
   volumeTotal?: number;
 }
 
@@ -123,6 +124,7 @@ export function useCollectionStats(contractAddress: string) {
     floorPrice: 0,
     listedCount: 0,
     volume24h: 0,
+    royalties: 0,
     volumeTotal: 0
 });
   const [isLoading, setIsLoading] = useState(true);
