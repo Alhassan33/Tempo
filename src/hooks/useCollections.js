@@ -2,17 +2,10 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-/**
- * Fetch all collections, or a single collection by slug.
- *
- * Usage:
- *   const { collections, loading, error } = useCollections();
- *   const { collections, loading, error } = useCollections({ slug: 'temponyaw' });
- */
-export function useCollections({ slug } = {}) {
+export function useCollections({ slug, sortBy = 'volume_total' } = {}) {
   const [collections, setCollections] = useState([]);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,7 +34,7 @@ export function useCollections({ slug } = {}) {
             owners,
             created_at
           `)
-          .order('volume_total', { ascending: false });
+          .order(sortBy, { ascending: false });
 
         if (slug) {
           query = query.eq('slug', slug).single();
@@ -51,7 +44,6 @@ export function useCollections({ slug } = {}) {
 
         if (sbError) throw sbError;
         if (!cancelled) {
-          // .single() returns an object, not an array
           setCollections(slug ? (data ? [data] : []) : (data ?? []));
         }
       } catch (err) {
@@ -63,7 +55,7 @@ export function useCollections({ slug } = {}) {
 
     fetch();
     return () => { cancelled = true; };
-  }, [slug]);
+  }, [slug, sortBy]);
 
   return { collections, loading, error };
 }
