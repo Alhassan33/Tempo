@@ -1,15 +1,16 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
+import { useAccount } from "wagmi"; // Essential for Portfolio
 import { CheckCircle2, ExternalLink, Twitter, Globe, TrendingDown, TrendingUp } from "lucide-react";
-import { useCollection, useRealtimeListings } from "@/hooks/useSupabase";
-import NFTImage from "@/components/NFTImage.jsx";
-import { CardSkeleton } from "@/components/Skeleton.jsx";
-import { extractImageUrl } from "@/utils/nftImageUtils.js";
-import ActivityFeed from "@/components/ActivityFeed.jsx";
+import { useCollection, useRealtimeListings } from "@../../hooks/useSupabase";
+import NFTImage from "@../../components/NFTImage.jsx";
+import { CardSkeleton } from "@../../components/Skeleton.jsx";
+import { extractImageUrl } from "@../../utils/nftImageUtils.js";
+import ActivityFeed from "@../../components/ActivityFeed.jsx";
+import NFTGridItem from "@../../components/NFTGridItem.jsx"; // Ensure this path is correct
 
 const TABS = ["Items", "Activity", "Bids", "Analytics"];
 const EXPLORER_BASE = "https://explore.tempo.xyz";
-const PAGE_SIZE = 50;
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 const StatItem = ({ label, value, subValue, isTrend }) => (
@@ -19,9 +20,9 @@ const StatItem = ({ label, value, subValue, isTrend }) => (
       <div className="font-mono text-lg font-bold" style={{ color: "#e6edf3" }}>{value}</div>
       {subValue && (
         <div className={`text-[11px] font-bold flex items-center gap-0.5 ${
-          isTrend ? (subValue.includes('-') ? 'text-red-400' : 'text-green-400') : ''
-        }`} style={!isTrend ? { color: "#9da7b3" } : {}}>
-          {isTrend && (subValue.includes('-') ? <TrendingDown size={11} /> : <TrendingUp size={11} />)}
+          isTrend ? (subValue.includes("-") ? "text-red-400" : "text-green-400") : "text-[#9da7b3]"
+        }`}>
+          {isTrend && (subValue.includes("-") ? <TrendingDown size={12} /> : <TrendingUp size={12} />)}
           {subValue}
         </div>
       )}
@@ -29,211 +30,125 @@ const StatItem = ({ label, value, subValue, isTrend }) => (
   </div>
 );
 
-// ─── NFT Grid Item ────────────────────────────────────────────────────────────
-function NFTGridItem({ token, collectionName, slug, listing }) {
-  return (
-    <Link
-      to={`/collection/${slug}/${token.tokenId}`}
-      className="block rounded-2xl overflow-hidden card-hover p-2"
-      style={{ 
-        background: "#121821", 
-        border: listing ? "1px solid rgba(34,211,238,0.3)" : "1px solid rgba(255,255,255,0.05)",
-        boxShadow: listing ? "0 0 15px rgba(34,211,238,0.05)" : "none"
-      }}>
-      <div className="relative">
-        <NFTImage src={token.image} className="aspect-square rounded-xl object-cover mb-2 w-full" />
-        {listing && (
-          <div className="absolute top-2 left-2 text-[9px] font-bold px-2 py-0.5 rounded-lg"
-            style={{ background: "rgba(11,15,20,0.85)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.4)", backdropFilter: "blur(4px)" }}>
-            ● FOR SALE
-          </div>
-        )}
-      </div>
-      <div className="px-1 pb-1">
-        <div className="text-[10px] font-bold uppercase tracking-tight mb-0.5 truncate" style={{ color: "#9da7b3" }}>
-          {collectionName}
-        </div>
-        <div className="text-sm font-bold truncate" style={{ color: "#e6edf3" }}>{token.name}</div>
-        {listing && (
-          <div className="font-mono text-xs font-bold mt-0.5" style={{ color: "#22d3ee" }}>
-            {Number(listing.price).toFixed(2)} USD
-          </div>
-        )}
-      </div>
-    </Link>
-  );
-}
-
-export default function CollectionPage() {
+export default function PortfolioPage() {
   const { id } = useParams();
-  const { collection, isLoading: colLoading } = useCollection(id);
+  const { address } = useAccount();
+  const [tab, setTab] = useState("Items");
+  const { collection, loading: collectionLoading } = useCollection(id);
+  
+  // FIX: Pass 'id' directly as a string to match useListings(nftContract: string)
   const { listings: rawListings, isLoading: listingsLoading } = useRealtimeListings(id);
 
-  // ✅ HOISTING LOGIC: Extract active listings and create a Set for fast exclusion
-  const activeListings = useMemo(() => {
-    return (listings || []).filter(l => l.active).sort((a, b) => a.price - b.price);
-  }, [listings]);
-
-  const listedIds = useMemo(() => new Set(activeListings.map(l => String(l.token_id))), [activeListings]);
-
-  const [unlistedTokens, setUnlistedTokens] = useState([]);
+  // Placeholder for user's wallet tokens - typically from a hook like useUserTokens(id, address)
+  const [tokens, setTokens] = useState([]); 
   const [tokensLoading, setTokensLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [tab, setTab] = useState("Items");
-  const loaderRef = useRef(null);
 
-  const stats = useMemo(() => {
-    const supply = collection?.total_supply || 0;
-    const listed = activeListings.length;
-    const royaltyBps = collection?.royalty_bps ?? 0;
-    return {
-      floor: collection?.floor_price ? `${Number(collection.floor_price).toFixed(2)} USD` : "—",
-      topOffer: collection?.top_offer ? `${Number(collection.top_offer).toFixed(2)} USD` : "—",
-      vol24h: collection?.volume_24h ? `${Number(collection.volume_24h).toFixed(2)} USD` : "0 USD",
-      totalVol: collection?.volume_total ? `${Number(collection.volume_total).toFixed(2)} USD` : "0 USD",
-      mktCap: collection?.floor_price && supply ? `${(Number(collection.floor_price) * supply).toLocaleString()} USD` : "—",
-      owners: collection?.owners || 0,
-      ownerPct: supply ? `${((collection.owners / supply) * 100).toFixed(1)}%` : "0%",
-      listed,
-      listedPct: supply ? `${((listed / supply) * 100).toFixed(1)}% listed` : "",
-      supply: supply.toLocaleString(),
-      royalties: royaltyBps ? `${(royaltyBps / 100).toFixed(1)}%` : "0%",
-    };
-  }, [collection, activeListings]);
+  // ─── Logic: Separate Listed vs Unlisted ─────────────────────────────────────
+  
+  // 1. NFTs in your wallet that are currently listed for sale
+  const activeListings = useMemo(() => {
+    if (!rawListings || !address) return [];
+    return rawListings.filter(l => 
+      l.active && l.seller?.toLowerCase() === address.toLowerCase()
+    );
+  }, [rawListings, address]);
 
-  const fetchPage = useCallback(async (pageNum) => {
-    if (!collection?.metadata_base_uri) return;
-    let base = collection.metadata_base_uri;
-    if (base.startsWith("ipfs://")) base = base.replace("ipfs://", "https://gateway.lighthouse.storage/ipfs/");
-    if (!base.endsWith("/")) base += "/";
-
-    const supply = collection.total_supply || 2000;
-    const start = (pageNum - 1) * PAGE_SIZE + 1;
-    const end = Math.min(start + PAGE_SIZE - 1, supply);
-
-    if (start > supply) { setHasMore(false); return; }
-
-    setTokensLoading(true);
-    const ids = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-
-    const results = await Promise.all(ids.map(async (tokenId) => {
-      const idStr = String(tokenId);
-      // Skip if already showing in the hoisted "For Sale" section
-      if (listedIds.has(idStr)) return null;
-
-      try {
-        const res = await fetch(`${base}${tokenId}.json`, { cache: "force-cache" });
-        const json = await res.json();
-        return { tokenId: idStr, name: json.name || `${collection.name} #${tokenId}`, image: extractImageUrl(json) };
-      } catch {
-        return { tokenId: idStr, name: `${collection.name} #${tokenId}`, image: "" };
-      }
-    }));
-
-    const valid = results.filter(t => t !== null);
-    setUnlistedTokens(prev => pageNum === 1 ? valid : [...prev, ...valid]);
-    setHasMore(end < supply);
-    setTokensLoading(false);
-  }, [collection, listedIds]);
-
-  useEffect(() => {
-    if (collection?.metadata_base_uri) {
-      setUnlistedTokens([]);
-      setPage(1);
-      setHasMore(true);
-      fetchPage(1);
-    }
-  }, [collection?.metadata_base_uri, fetchPage]);
-
-  useEffect(() => { if (page > 1) fetchPage(page); }, [page, fetchPage]);
-
-  useEffect(() => {
-    if (!loaderRef.current) return;
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore && !tokensLoading) setPage(p => p + 1);
-    }, { rootMargin: "200px" });
-    observer.observe(loaderRef.current);
-    return () => observer.disconnect();
-  }, [hasMore, tokensLoading]);
-
-  if (colLoading) return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "#22d3ee" }} />
-    </div>
-  );
+  // 2. NFTs in your wallet that ARE NOT listed
+  const unlistedTokens = useMemo(() => {
+    if (!tokens || !address) return [];
+    const listedIds = new Set(activeListings.map(l => String(l.token_id)));
+    return tokens.filter(t => !listedIds.has(String(t.tokenId)));
+  }, [tokens, activeListings, address]);
 
   return (
-    <div className="fade-up min-h-screen pb-20" style={{ background: "#0b0f14" }}>
-      <div className="relative h-56 w-full overflow-hidden">
-        {collection?.banner_url ? <img src={collection.banner_url} className="w-full h-full object-cover opacity-60" /> : <div className="w-full h-full bg-slate-900" />}
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#0b0f14]" />
-      </div>
-
-      <div className="px-4 sm:px-6 max-w-7xl mx-auto -mt-16 relative z-10">
-        <div className="flex flex-col md:flex-row md:items-end gap-5 mb-8">
-          <div className="w-28 h-28 rounded-3xl overflow-hidden border-[6px] border-[#0b0f14] bg-[#121821]">
-            <NFTImage src={collection?.logo_url} className="w-full h-full object-cover" />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-3xl font-extrabold uppercase tracking-tight text-[#e6edf3]">{collection?.name}</h1>
-              {collection?.verified && <CheckCircle2 size={22} className="text-[#22d3ee]" />}
+    <div className="min-h-screen text-[#e6edf3] p-4 md:p-8" style={{ background: "#0b0f14" }}>
+      {/* Header & Branding */}
+      <div className="max-w-7xl mx-auto space-y-8">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold tracking-tight uppercase italic">{collection?.name || "Collection"}</h1>
+              <CheckCircle2 size={20} className="text-[#22d3ee]" fill="rgba(34,211,238,0.1)" />
             </div>
-            <p className="text-sm text-[#9da7b3] font-bold">By {collection?.creator_name || "Tempo Creator"}</p>
+            <div className="flex items-center gap-4 text-[#9da7b3]">
+              <span className="text-sm">By <span className="text-[#22d3ee] font-medium">Tempo Creator</span></span>
+              <div className="flex items-center gap-3 ml-2">
+                <Twitter size={16} className="hover:text-white cursor-pointer transition-colors" />
+                <Globe size={16} className="hover:text-white cursor-pointer transition-colors" />
+                <ExternalLink size={16} className="hover:text-white cursor-pointer transition-colors" />
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
-          <StatItem label="Floor" value={stats.floor} />
-          <StatItem label="Top Offer" value={stats.topOffer} />
-          <StatItem label="24H Vol" value={stats.vol24h} />
-          <StatItem label="Total Vol" value={stats.totalVol} />
-          <StatItem label="Listed" value={stats.listed} subValue={stats.listedPct} />
-          <StatItem label="Owners" value={stats.owners} subValue={stats.ownerPct} />
-          <StatItem label="Supply" value={stats.supply} />
-          <StatItem label="Royalties" value={stats.royalties} />
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatItem label="FLOOR PRICE" value="25.00 USD" subValue="+12.5%" isTrend={true} />
+          <StatItem label="ITEMS OWNED" value={activeListings.length + unlistedTokens.length} subValue="Portfolio Share" />
+          <StatItem label="LISTED" value={activeListings.length} subValue={`${((activeListings.length / 2000) * 100).toFixed(1)}% of total`} />
+          <StatItem label="EST. VALUE" value={`${((activeListings.length + unlistedTokens.length) * 25).toFixed(2)} USD`} />
         </div>
 
-        <div className="flex gap-6 border-b border-white/10 mb-6">
+        {/* Tabs */}
+        <div className="flex gap-8 border-b border-white/5">
           {TABS.map(t => (
-            <button key={t} onClick={() => setTab(t)} className={`pb-4 text-sm font-bold uppercase tracking-widest border-b-2 transition-all ${tab === t ? "border-[#22d3ee] text-[#22d3ee]" : "border-transparent text-[#9da7b3]"}`}>
+            <button key={t} onClick={() => setTab(t)}
+              className={`pb-4 text-[11px] font-bold uppercase tracking-widest border-b-2 transition-all ${
+                tab === t ? "border-[#22d3ee] text-[#22d3ee]" : "border-transparent text-[#9da7b3]"
+              }`}>
               {t}
             </button>
           ))}
         </div>
 
+        {/* Tab Content */}
         {tab === "Items" && (
-          <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-              {/* 1. Show Listened NFTs First */}
-              {activeListings.map(listing => (
-                <NFTGridItem 
-                  key={`listed-${listing.token_id}`} 
-                  token={{ tokenId: listing.token_id, name: `${collection?.name} #${listing.token_id}`, image: listing.image_url || "" }} 
-                  collectionName={collection?.name} 
-                  slug={id} 
-                  listing={listing} 
-                />
-              ))}
+          <div className="py-6">
+            {!address ? (
+              <div className="py-20 text-center rounded-3xl border border-dashed border-white/10 bg-white/[0.02]">
+                <p className="text-[#9da7b3]">Please connect your wallet to view your portfolio.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                {/* Render Listed Items */}
+                {activeListings.map(listing => (
+                  <NFTGridItem 
+                    key={`listed-${listing.token_id}`} 
+                    token={{ 
+                      tokenId: listing.token_id, 
+                      name: `${collection?.name} #${listing.token_id}`, 
+                      image: listing.image_url || "" 
+                    }} 
+                    collectionName={collection?.name} 
+                    slug={id} 
+                    listing={listing} 
+                  />
+                ))}
 
-              {/* 2. Show the rest of the collection */}
-              {unlistedTokens.map(token => (
-                <NFTGridItem 
-                  key={`unlisted-${token.tokenId}`} 
-                  token={token} 
-                  collectionName={collection?.name} 
-                  slug={id} 
-                  listing={null} 
-                />
-              ))}
-              {tokensLoading && Array(10).fill(0).map((_, i) => <CardSkeleton key={i} />)}
-            </div>
-            <div ref={loaderRef} className="h-10" />
-          </>
+                {/* Render Unlisted Items */}
+                {unlistedTokens.map(token => (
+                  <NFTGridItem 
+                    key={`unlisted-${token.tokenId}`} 
+                    token={token} 
+                    collectionName={collection?.name} 
+                    slug={id} 
+                    listing={null} 
+                  />
+                ))}
+
+                {(listingsLoading || tokensLoading) && Array(5).fill(0).map((_, i) => <CardSkeleton key={i} />)}
+              </div>
+            )}
+            
+            {address && activeListings.length === 0 && unlistedTokens.length === 0 && !listingsLoading && (
+              <div className="py-20 text-center rounded-3xl border border-dashed border-white/10 bg-white/[0.02]">
+                <p className="text-[#9da7b3]">No NFTs found in this collection for your address.</p>
+              </div>
+            )}
+          </div>
         )}
 
-        {tab === "Activity" && <ActivityFeed collectionId={id} nftContract={collection?.contract_address} limit={40} />}
+        {tab === "Activity" && <ActivityFeed collectionId={id} nftContract={collection?.contract_address} />}
       </div>
     </div>
   );
