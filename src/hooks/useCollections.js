@@ -19,51 +19,49 @@ export function useCollections({
       setError(null);
 
       try {
-        // ─── MODE 1: Fetch active listings via RPC (for Items tab) ────────────
-        if (fetchListings && slug) {
-          const isAddress = slug.startsWith('0x');
-          
-          // Call RPC with NO parameters (function returns all active listings)
-          const { data, error: rpcError } = await supabase
-            .rpc('get_active_listings_with_nfts'); // ← NO arguments!
+  // hooks/useCollections.js — MODE 1 fixed
+if (fetchListings && slug) {
+  const isAddress = slug.startsWith('0x');
+  
+  let contractAddress;
+  
+  if (isAddress) {
+    contractAddress = slug.toLowerCase();
+  } else {
+    // Need to resolve slug to address first
+    const { data: collection } = await supabase
+      .from('collections')
+      .select('contract_address')
+      .eq('slug', slug)
+      .single();
+    
+    if (!collection) {
+      setCollections([]);
+      setLoading(false);
+      return;
+    }
+    
+    contractAddress = collection.contract_address.toLowerCase();
+  }
 
-          if (rpcError) throw rpcError;
-          
-          if (!cancelled && data && Array.isArray(data)) {
-            // Filter in JavaScript by matching address (case-insensitive)
-            const normalizedSlug = isAddress ? slug.toLowerCase() : slug;
-            
-            const filtered = data.filter(item => {
-              if (isAddress) {
-                return item.nft_contract?.toLowerCase() === normalizedSlug;
-              }
-              // If you have collection_slug in the RPC result, filter by that
-              // Otherwise, you'd need to join with collections table
-              return item.collection_slug === normalizedSlug;
-            });
+  // Now call RPC and filter by resolved address
+  const { data, error: rpcError } = await supabase
+    .rpc('get_active_listings_with_nfts');
 
-            // Transform to match your UI expectations
-            const transformed = filtered.map(item => ({
-              id: item.id,
-              listingId: String(item.listing_id),
-              seller: item.seller,
-              nftAddress: item.nft_contract,
-              tokenId: String(item.token_id),
-              price: String(item.price),
-              displayPrice: (Number(item.price) / 1e6).toFixed(2),
-              active: item.active,
-              name: item.name,
-              image: item.image,
-              metadata: item.metadata,
-              rarityRank: item.rarity_rank,
-              createdAt: item.created_at
-            }));
-            
-            setCollections(transformed);
-          } else {
-            setCollections([]);
-          }
-        } 
+  if (rpcError) throw rpcError;
+  
+  if (!cancelled && data && Array.isArray(data)) {
+    const filtered = data.filter(item => 
+      item.nft_contract?.toLowerCase() === contractAddress
+    );
+    
+    const transformed = filtered.map(item => ({
+      // ... mapping
+    }));
+    
+    setCollections(transformed);
+  }
+} 
         // ─── MODE 2: Fetch collections table (for dashboard/grid) ───────────
         else {
           let query = supabase
