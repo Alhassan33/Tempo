@@ -51,7 +51,7 @@ export interface Listing {
   created_at: string;
 }
 
-/ ─── NEW: Collection Stats Type ───────────────────────────────────────────────
+// ─── NEW: Collection Stats Type ───────────────────────────────────────────────
 export interface CollectionStats {
   totalSupply: number;
   uniqueOwners: number;
