@@ -37,7 +37,7 @@ export default function Layout({ children }) {
 
           <NavLink to="/" className="flex items-center gap-3 no-underline">
             <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 shadow-lg shadow-cyan-500/10">
-              <img src="/attached_assets/nyans.png" alt="Logo" className="w-full h-full object-cover" />
+              <img src="/assets/nyans.png" alt="Logo" className="w-full h-full object-cover" />
             </div>
             <span className="font-black text-lg tracking-tighter uppercase italic hidden sm:block text-white">
               TEMPO<span className="text-[#22d3ee]">NYAN</span>
