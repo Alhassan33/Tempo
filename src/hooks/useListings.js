@@ -1,8 +1,16 @@
-// ─── REPLACEMENT for useListings in useSupabase.ts ───────────────────────────
-// Replace the entire useListings function (lines ~213-252) with this.
-// Removes the broken get_active_listings_with_nfts RPC call.
-// Queries the listings table directly — simple, reliable, no Supabase function needed.
+// useListings hook - FIXED VERSION
+// Replace the entire useListings function in useSupabase.ts with this
 
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+
+/**
+ * Fetches active listings for a specific NFT contract
+ * Prices are returned in both raw units (for contract calls) and display format (for UI)
+ * 
+ * DB stores: 25000000 (raw 6-decimal units = $25.00)
+ * UI shows:  "25.00 USD"
+ */
 export function useListings(nftContract: string) {
   const [listings, setListings] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,11 +36,14 @@ export function useListings(nftContract: string) {
           .order("price", { ascending: true });
 
         if (dbErr) throw dbErr;
+        
         if (!cancelled) {
           setListings(
             (data || []).map((item: any) => ({
               ...item,
-              displayPrice: Number(item.price).toFixed(2),
+              // CRITICAL FIX: Divide by 1e6 to convert raw units to display USD
+              // DB stores 25000000 (atomic units), UI shows 25.00 USD
+              displayPrice: (Number(item.price) / 1e6).toFixed(2),
             }))
           );
         }
