@@ -79,7 +79,7 @@ export default function Layout({ children }) {
         </nav>
       </div>
 
-      <main>{children}</main>
+      <main>{children}</main> 
     </div>
   );
-}
+};
