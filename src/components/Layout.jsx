@@ -1,8 +1,8 @@
-import LogoImg from "../assets/nyans.png"; 
+import LogoImg from "../assets/nyans.png";
 import { useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { Menu, X, ShoppingBag, Rocket, Briefcase, Settings, Shield, Search, ChevronRight } from "lucide-react";
+import { Menu, X, ShoppingBag, Rocket, Briefcase, Settings, Shield, ChevronRight } from "lucide-react";
 
 const NAV_LINKS = [
   { to: "/",          label: "Market",    icon: ShoppingBag },
@@ -15,9 +15,7 @@ const NAV_LINKS = [
 export default function Layout({ children }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [search, setSearch]     = useState("");
   const menuRef = useRef(null);
-  const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
@@ -38,10 +36,11 @@ export default function Layout({ children }) {
 
           <NavLink to="/" className="flex items-center gap-3 no-underline">
             <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 shadow-lg shadow-cyan-500/10">
-              <img src="/assets/nyans.png" alt="Logo" className="w-full h-full object-cover" />
+              {/* Using LogoImg variable here as well for consistency */}
+              <img src={LogoImg} alt="Logo" className="w-full h-full object-cover" />
             </div>
             <span className="font-black text-lg tracking-tighter uppercase italic hidden sm:block text-white">
-              TEMPO<span className="text-[#22d3ee]">NYAN</span>
+              TEMPO<span className="text-[#22c55e]">NYAN</span>
             </span>
           </NavLink>
 
@@ -52,23 +51,45 @@ export default function Layout({ children }) {
       </header>
 
       {/* Drawer Overlay */}
-      {menuOpen && <div onClick={() => setMenuOpen(false)} className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm" />}
+      {menuOpen && (
+        <div 
+          onClick={() => setMenuOpen(false)} 
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm" 
+        />
+      )}
 
       {/* Drawer */}
-      <div ref={menuRef} className={`fixed top-0 left-0 h-full z-50 w-[300px] bg-[#03080f] border-r border-white/10 transition-transform duration-300 ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex items-center gap-2">
-  <img 
-    src={LogoImg}  // No quotes around {LogoImg}
-    className="w-8 h-8 rounded-lg object-contain" 
-    alt="Logo" 
-  />
-  <span className="text-xl font-bold text-[#22c55e]">NYAN</span>
-</div>
-          <button onClick={() => setMenuOpen(false)} className="text-gray-500 hover:text-white"><X size={20} /></button>
+      <div 
+        ref={menuRef} 
+        className={`fixed top-0 left-0 h-full z-50 w-[300px] bg-[#03080f] border-r border-white/10 transition-transform duration-300 ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-white/5">
+          <div className="flex items-center gap-2">
+            <img 
+              src={LogoImg} 
+              className="w-8 h-8 rounded-lg object-contain" 
+              alt="Logo" 
+            />
+            <span className="text-xl font-bold text-[#22c55e]">NYAN</span>
+          </div>
+          <button onClick={() => setMenuOpen(false)} className="text-gray-500 hover:text-white">
+            <X size={20} />
+          </button>
         </div>
+
         <nav className="p-4">
           {NAV_LINKS.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => `flex items-center justify-between px-4 h-14 rounded-2xl mb-2 no-underline transition-all ${isActive ? 'bg-[#22d3ee]/10 text-[#22d3ee] border border-[#22d3ee]/20' : 'text-gray-400 hover:bg-white/5'}`}>
+            <NavLink 
+              key={to} 
+              to={to} 
+              className={({ isActive }) => 
+                `flex items-center justify-between px-4 h-14 rounded-2xl mb-2 no-underline transition-all ${
+                  isActive 
+                    ? 'bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/20' 
+                    : 'text-gray-400 hover:bg-white/5'
+                }`
+              }
+            >
               <div className="flex items-center gap-4">
                 <Icon size={18} />
                 <span className="text-base font-bold uppercase tracking-tight italic">{label}</span>
@@ -82,4 +103,4 @@ export default function Layout({ children }) {
       <main>{children}</main> 
     </div>
   );
-};
+}
