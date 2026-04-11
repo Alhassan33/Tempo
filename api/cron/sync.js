@@ -4,18 +4,22 @@
  * PRICE CONVENTION:
  *   DB → RAW 6-decimal units  e.g. 25000000 = $25.00 pathUSD
  *   UI → divide by 1e6 for display
- *   Never store 18-decimal ETH values. Filter them out.
  *
- * Schedule in vercel.json → run every minute for fast listing/sale sync:
- *   { "path": "/api/cron/sync", "schedule": "* * * * *" }
+ * GHOST LISTING FIX:
+ *   - On every Transfer event, ALL active listings for that token are deactivated
+ *   - On Sale event, listing is immediately set active=false
+ *   - On Cancelled event, listing is immediately set active=false
+ *   - Duplicate listings for same token are cleaned up every run
+ *
+ * Schedule: every minute
+ *   vercel.json → { "path": "/api/cron/sync", "schedule": "* * * * *" }
  */
 
 import { createClient } from "@supabase/supabase-js";
 import { createPublicClient, http, parseAbiItem, defineChain } from "viem";
 
 const tempoMainnet = defineChain({
-  id: 4217,
-  name: "Tempo",
+  id: 4217, name: "Tempo",
   nativeCurrency: { name: "USD", symbol: "USD", decimals: 18 },
   rpcUrls: { default: { http: ["https://rpc.tempo.xyz"] } },
   blockExplorers: { default: { name: "Tempo Explorer", url: "https://explore.tempo.xyz" } },
@@ -23,27 +27,22 @@ const tempoMainnet = defineChain({
 });
 
 const publicClient = createPublicClient({
-  chain: tempoMainnet,
-  transport: http("https://rpc.tempo.xyz"),
+  chain: tempoMainnet, transport: http("https://rpc.tempo.xyz"),
 });
 
 const MARKETPLACE_ADDRESS = "0x218AB916fe8d7A1Ca87d7cD5Dfb1d44684Ab926b";
 const CHUNK_SIZE          = 2000n;
 const ZERO_ADDRESS        = "0x0000000000000000000000000000000000000000";
 
-// Sanity guard: pathUSD prices must be $0.01–$1,000,000 in 6-decimal raw units
-const MIN_PRICE_RAW = 10_000n;            // $0.01
-const MAX_PRICE_RAW = 1_000_000_000_000n; // $1,000,000
+// Prices must be $0.01–$1,000,000 in 6-decimal units
+const MIN_PRICE_RAW = 10_000n;
+const MAX_PRICE_RAW = 1_000_000_000_000n;
 
 function getDb() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
-// Store raw int directly — 25000000 goes into DB as 25000000
-function storePrice(rawBigInt) {
-  return Number(rawBigInt);
-}
-
+function storePrice(rawBigInt) { return Number(rawBigInt); }
 function isPriceValid(rawBigInt) {
   const v = BigInt(rawBigInt);
   return v >= MIN_PRICE_RAW && v <= MAX_PRICE_RAW;
@@ -76,12 +75,25 @@ async function ensureCollection(db, contractAddress) {
   }
 }
 
+/**
+ * Deactivate ALL active listings for a given token.
+ * This is the key ghost-listing fix — called on Transfer AND Sale AND Cancel.
+ */
+async function deactivateTokenListings(db, nftContract, tokenId) {
+  await db.from("listings")
+    .update({ active: false, updated_at: new Date().toISOString() })
+    .eq("nft_contract", nftContract.toLowerCase())
+    .eq("token_id", Number(tokenId))
+    .eq("active", true);
+}
+
 async function updateCollectionStats(db, contractAddress) {
   const addr     = contractAddress.toLowerCase();
   const since24h = new Date(Date.now() - 86_400_000).toISOString();
 
   const { data: floorRow } = await db.from("listings").select("price")
-    .eq("nft_contract", addr).eq("active", true).order("price", { ascending: true }).limit(1);
+    .eq("nft_contract", addr).eq("active", true)
+    .order("price", { ascending: true }).limit(1);
   const floorPrice = floorRow?.[0]?.price ?? 0;
 
   const { count: listedCount } = await db.from("listings")
@@ -91,7 +103,8 @@ async function updateCollectionStats(db, contractAddress) {
   const volumeTotal = allSales?.reduce((s, r) => s + (Number(r.price) || 0), 0) ?? 0;
   const totalSales  = allSales?.length ?? 0;
 
-  const { data: sales24h } = await db.from("sales").select("price").eq("nft_contract", addr).gte("sold_at", since24h);
+  const { data: sales24h } = await db.from("sales").select("price")
+    .eq("nft_contract", addr).gte("sold_at", since24h);
   const volume24h     = sales24h?.reduce((s, r) => s + (Number(r.price) || 0), 0) ?? 0;
   const salesCount24h = sales24h?.length ?? 0;
 
@@ -125,22 +138,57 @@ async function syncNFTOwnership(db, contractAddress, fromBlock, toBlock) {
   let count = 0;
   for (const log of logs) {
     const { to, tokenId } = log.args;
-    // When NFT moves, instantly delist it
-    if (to.toLowerCase() !== ZERO_ADDRESS) {
-      await db.from("listings")
-        .update({ active: false, updated_at: new Date().toISOString() })
-        .eq("nft_contract", addr).eq("token_id", Number(tokenId)).eq("active", true);
-    }
+    const toAddr = to.toLowerCase();
+
+    // ✅ KEY FIX: Any transfer means the token moved — delist everything for it
+    await deactivateTokenListings(db, contractAddress, tokenId);
+
+    // Update ownership
     const { error } = await db.from("nfts").upsert({
       contract_address:   addr,
       token_id:           Number(tokenId),
-      owner_address:      to.toLowerCase(),
+      owner_address:      toAddr,
       last_updated_block: Number(log.blockNumber),
       updated_at:         new Date().toISOString(),
     }, { onConflict: "contract_address,token_id" });
+
     if (!error) count++;
   }
   return count;
+}
+
+/**
+ * Clean up duplicate/zombie listings:
+ * If multiple active listings exist for the same nft_contract + token_id,
+ * keep only the one with the highest listing_id (most recent) and deactivate the rest.
+ */
+async function cleanDuplicateListings(db) {
+  const { data: rows } = await db
+    .from("listings")
+    .select("id, listing_id, nft_contract, token_id")
+    .eq("active", true)
+    .order("listing_id", { ascending: false });
+
+  if (!rows?.length) return;
+
+  const seen = new Set();
+  const toDeactivate = [];
+
+  for (const row of rows) {
+    const key = `${row.nft_contract}:${row.token_id}`;
+    if (seen.has(key)) {
+      toDeactivate.push(row.listing_id); // older duplicate
+    } else {
+      seen.add(key);
+    }
+  }
+
+  if (toDeactivate.length > 0) {
+    console.log(`[sync] Deactivating ${toDeactivate.length} duplicate listings`);
+    await db.from("listings")
+      .update({ active: false, updated_at: new Date().toISOString() })
+      .in("listing_id", toDeactivate);
+  }
 }
 
 export default async function handler(req, res) {
@@ -148,7 +196,7 @@ export default async function handler(req, res) {
   console.log("[sync] starting at", new Date().toISOString());
 
   try {
-    const db = getDb();
+    const db          = getDb();
     const latestBlock = await publicClient.getBlockNumber();
 
     const { data: stateRow } = await db.from("indexer_state")
@@ -156,21 +204,29 @@ export default async function handler(req, res) {
     const lastBlock = BigInt(stateRow?.last_block || 0);
 
     if (lastBlock >= latestBlock) {
+      // Still run duplicate cleanup even when no new blocks
+      await cleanDuplicateListings(db);
       return res.status(200).json({ ok: true, synced: 0, block: latestBlock.toString(), msg: "up to date" });
     }
 
     const safeFrom = lastBlock === 0n ? latestBlock - 5000n : lastBlock + 1n;
+    console.log(`[sync] scanning ${safeFrom} → ${latestBlock}`);
     let synced = 0, skipped = 0;
 
-    // Listed
+    // ── Listed ────────────────────────────────────────────────────────────
     const listedLogs = await getLogs({
       fromBlock: safeFrom, toBlock: latestBlock, address: MARKETPLACE_ADDRESS,
       event: "event Listed(uint256 indexed listingId, address indexed seller, address indexed nftContract, uint256 tokenId, uint256 price)",
     });
     for (const log of listedLogs) {
       const { listingId, seller, nftContract, tokenId, price } = log.args;
-      if (!isPriceValid(price)) { skipped++; continue; }
+      if (!isPriceValid(price)) {
+        console.warn(`[sync] SKIP Listed ${listingId} bad price ${price}`);
+        skipped++; continue;
+      }
       await ensureCollection(db, nftContract);
+      // ✅ Deactivate any old listing for this token before inserting new one
+      await deactivateTokenListings(db, nftContract, tokenId);
       const { error } = await db.from("listings").upsert({
         listing_id:   Number(listingId),
         seller:       seller.toLowerCase(),
@@ -182,10 +238,10 @@ export default async function handler(req, res) {
         block_number: Number(log.blockNumber),
         updated_at:   new Date().toISOString(),
       }, { onConflict: "listing_id" });
-      if (!error) synced++;
+      if (!error) { await updateCollectionStats(db, nftContract); synced++; }
     }
 
-    // Sale
+    // ── Sale ──────────────────────────────────────────────────────────────
     const saleLogs = await getLogs({
       fromBlock: safeFrom, toBlock: latestBlock, address: MARKETPLACE_ADDRESS,
       event: "event Sale(uint256 indexed listingId, address indexed buyer, uint256 price)",
@@ -193,11 +249,14 @@ export default async function handler(req, res) {
     for (const log of saleLogs) {
       const { listingId, buyer, price } = log.args;
       if (!isPriceValid(price)) { skipped++; continue; }
-      await db.from("listings").update({ active: false, updated_at: new Date().toISOString() })
-        .eq("listing_id", Number(listingId));
+
+      // Fetch listing details before marking inactive
       const { data: listing } = await db.from("listings")
         .select("seller, nft_contract, token_id").eq("listing_id", Number(listingId)).single();
+
+      // ✅ Deactivate ALL listings for this token (not just by listing_id)
       if (listing) {
+        await deactivateTokenListings(db, listing.nft_contract, listing.token_id);
         await db.from("sales").upsert({
           listing_id:   Number(listingId),
           buyer:        buyer.toLowerCase(),
@@ -211,21 +270,33 @@ export default async function handler(req, res) {
         }, { onConflict: "listing_id" });
         await updateCollectionStats(db, listing.nft_contract);
         synced++;
+      } else {
+        // Fallback: at least mark this specific listing_id inactive
+        await db.from("listings").update({ active: false, updated_at: new Date().toISOString() })
+          .eq("listing_id", Number(listingId));
       }
     }
 
-    // Cancelled
+    // ── Cancelled ─────────────────────────────────────────────────────────
     const cancelLogs = await getLogs({
       fromBlock: safeFrom, toBlock: latestBlock, address: MARKETPLACE_ADDRESS,
       event: "event Cancelled(uint256 indexed listingId)",
     });
     for (const log of cancelLogs) {
-      await db.from("listings").update({ active: false, updated_at: new Date().toISOString() })
-        .eq("listing_id", Number(log.args.listingId));
+      const listingId = Number(log.args.listingId);
+      // Fetch token info so we can deactivate all listings for it
+      const { data: listing } = await db.from("listings")
+        .select("nft_contract, token_id").eq("listing_id", listingId).single();
+      if (listing) {
+        await deactivateTokenListings(db, listing.nft_contract, listing.token_id);
+      } else {
+        await db.from("listings").update({ active: false, updated_at: new Date().toISOString() })
+          .eq("listing_id", listingId);
+      }
       synced++;
     }
 
-    // PriceUpdated
+    // ── PriceUpdated ──────────────────────────────────────────────────────
     const priceLogs = await getLogs({
       fromBlock: safeFrom, toBlock: latestBlock, address: MARKETPLACE_ADDRESS,
       event: "event PriceUpdated(uint256 indexed listingId, uint256 newPrice)",
@@ -238,14 +309,18 @@ export default async function handler(req, res) {
       synced++;
     }
 
-    // NFT Transfers → ownership + auto-delist
+    // ── NFT Transfers → ownership update + delist ─────────────────────────
     const { data: collections } = await db.from("collections").select("contract_address");
     for (const col of collections || []) {
       const n = await syncNFTOwnership(db, col.contract_address, safeFrom, latestBlock);
       synced += n;
-      await updateCollectionStats(db, col.contract_address);
+      if (n > 0) await updateCollectionStats(db, col.contract_address);
     }
 
+    // ── Cleanup duplicate/zombie active listings ───────────────────────────
+    await cleanDuplicateListings(db);
+
+    // ── Save progress ─────────────────────────────────────────────────────
     await db.from("indexer_state").upsert({
       contract:   MARKETPLACE_ADDRESS,
       last_block: Number(latestBlock),
