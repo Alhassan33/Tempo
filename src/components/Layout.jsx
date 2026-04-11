@@ -63,7 +63,7 @@ export default function Layout({ children }) {
   className="w-8 h-8 rounded-lg" 
   alt="Logo" 
 />
-            <span className="font-black text-sm tracking-tighter Helvetica Neue text-white">TEMPO<span className="text-[#22d3ee]">NYAN</span></span>
+            <span className="font-black text-sm tracking-tighter Helvetica Neue text-white">TEMPO<span className="text-[#22c55e]">NYAN</span></span>
           </div>
           <button onClick={() => setMenuOpen(false)} className="text-gray-500 hover:text-white"><X size={20} /></button>
         </div>
