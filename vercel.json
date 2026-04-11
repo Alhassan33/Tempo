@@ -3,7 +3,10 @@
   "buildCommand": "npm run build",
   "installCommand": "npm install",
   "crons": [
-    { "path": "/api/cron/sync", "schedule": "0 * * * *" }
+    { 
+      "path": "/api/cron/sync", 
+      "schedule": "* * * * *" 
+    }
   ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
