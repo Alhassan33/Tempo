@@ -57,7 +57,7 @@ export default function Layout({ children }) {
       <div ref={menuRef} className={`fixed top-0 left-0 h-full z-50 w-[300px] bg-[#03080f] border-r border-white/10 transition-transform duration-300 ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex items-center justify-between px-6 h-16 border-b border-white/5">
           <div className="flex items-center gap-3">
-            <img src="/attached_assets/Nyan.jpg" className="w-8 h-8 rounded-lg" alt="Logo" />
+            <img src="/assets/nyans.png" className="w-8 h-8 rounded-lg" alt="Logo" />
             <span className="font-black text-sm tracking-tighter Helvetica Neue text-white">TEMPO<span className="text-[#22d3ee]">NYAN</span></span>
           </div>
           <button onClick={() => setMenuOpen(false)} className="text-gray-500 hover:text-white"><X size={20} /></button>
