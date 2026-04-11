@@ -1,385 +1,237 @@
-import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import {
+  useAccount, useChainId, usePublicClient,
+  useWriteContract, useConnect, useDisconnect,
+} from 'wagmi'
+import { parseUnits } from 'viem'
+import { injected } from 'wagmi/connectors'
+import { MARKETPLACE_ABI, ERC721_ABI, ERC20_ABI } from '../abi/marketplace.js'
+import { tempoMainnet } from '../wagmi.config.js'
+import { getClients } from '../rpcClients.js'
+import { supabase } from '../lib/supabase.js'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-export interface Collection {
-  id: string;
-  contract_address: string;
-  name: string;
-  slug: string;
-  description: string;
-  logo_url: string;
-  banner_url: string;
-  verified: boolean;
-  floor_price: number;
-  volume_total: number;
-  volume_24h: number;
-  total_sales: number;
-  total_supply: number;
-  owners: number;
+const TEMPO_CHAIN_IDS = new Set([tempoMainnet.id])
+const USD_DECIMALS    = 6
+
+// ─── Human USD → raw 6-decimal units ─────────────────────────────────────────
+function toRawUnits(humanPrice: string | number): bigint {
+  return parseUnits(String(humanPrice), USD_DECIMALS)
 }
 
-export interface Project {
-  id: string;
-  name: string;
-  contract_address: string;
-  description: string;
-  logo_url: string;
-  banner_url: string;
-  website: string;
-  twitter: string;
-  discord: string;
-  mint_price: number;
-  max_supply: number;
-  mint_start_time: string;
-  allowlist_active: boolean;
-  allowlist_price: number;
-  allowlist_start_time: string;
-  payment_token: string;
-  status: string;
-  featured_order: number;
+// ─── Decode revert codes into readable messages ───────────────────────────────
+function parseContractError(err: any): string {
+  const msg = err?.shortMessage || err?.message || ''
+  if (msg.includes('1002')) return 'Price changed — refresh and try again'
+  if (msg.includes('1001')) return 'Listing is no longer active'
+  if (msg.includes('1003')) return 'Below minimum listing price'
+  if (msg.includes('1004')) return 'Cannot buy your own listing'
+  if (msg.includes('EnforcedPause'))   return 'Marketplace is currently paused'
+  if (msg.includes('insufficient'))    return 'Insufficient USD balance'
+  if (msg.includes('user rejected') || msg.includes('User rejected')) return 'Transaction cancelled'
+  if (msg.includes('allowance'))       return 'Approval failed — please try again'
+  return err?.shortMessage || 'Transaction failed'
 }
 
 export interface Listing {
-  id: string;
-  listing_id: number;
-  seller: string;
-  nft_contract: string;
-  token_id: number;
-  price: number;
-  active: boolean;
-  created_at: string;
+  id?: string
+  listingId: string
+  seller: string
+  nftAddress: string
+  tokenId: string
+  price: string        // human-readable USD e.g. "1.00"
+  displayPrice: string
+  active: boolean
+  name?: string
+  image?: string
 }
 
-// ─── NEW: Collection Stats Type ───────────────────────────────────────────────
-export interface CollectionStats {
-  totalSupply: number;
-  uniqueOwners: number;
-  floorPrice: number;
-  listedCount: number;
-  volume24h?: number;
-  royalties?: number; 
-  volumeTotal?: number;
-}
+export function useMarketplace() {
+  const { address: account, isConnected } = useAccount()
+  const chainId      = useChainId()
+  const publicClient = usePublicClient()
 
-// ─── 1. useCollections ────────────────────────────────────────────────────────
-// Fetch all collections for the marketplace table
-export function useCollections(sortBy: string = "volume_total") {
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const network = useMemo(() => ({
+    marketplace:  "0x218AB916fe8d7A1Ca87d7cD5Dfb1d44684Ab926b",
+    paymentToken: "0x20c0000000000000000000000000000000000000",
+  }), [])
 
-  useEffect(() => {
-    async function fetch() {
-      setIsLoading(true);
+  const clients = useMemo(() => getClients(chainId), [chainId])
+  const { connect }            = useConnect()
+  const { disconnect }         = useDisconnect()
+  const { writeContractAsync } = useWriteContract()
+
+  const [listings, setListings] = useState<Listing[]>([])
+  const [balance,  setBalance]  = useState<string | null>(null)
+  const [loading,  setLoading]  = useState(false)
+  const [txStatus, setTxStatus] = useState<{ type: 'info'|'success'|'error'; msg: string } | null>(null)
+
+  const wrongNetwork = !TEMPO_CHAIN_IDS.has(chainId)
+  const status       = (type: 'info'|'success'|'error', msg: string) => setTxStatus({ type, msg })
+  const clearStatus  = () => setTxStatus(null)
+
+  // ─── Fetch listings ────────────────────────────────────────────────────────
+  const fetchListings = useCallback(async () => {
+    setLoading(true)
+    try {
       const { data, error } = await supabase
-        .from("collections")
-        .select("*")
-        .order(sortBy, { ascending: false });
+        .from('listings').select('*')
+        .eq('active', true).order('price', { ascending: true })
+      if (error) throw error
+      setListings((data || []).map((item: any) => ({
+        id:           item.id,
+        listingId:    String(item.listing_id),
+        seller:       item.seller,
+        nftAddress:   item.nft_contract,
+        tokenId:      String(item.token_id),
+        price:        String(item.price),            // human USD
+        displayPrice: Number(item.price).toFixed(2),
+        active:       item.active,
+        name:         item.name,
+        image:        item.image,
+      })))
+    } catch (err) {
+      console.error('fetchListings:', err)
+      setListings([])
+    } finally { setLoading(false) }
+  }, [])
 
-      if (error) setError(error.message);
-      else setCollections(data || []);
-      setIsLoading(false);
-    }
-    fetch();
-  }, [sortBy]);
+  const fetchBalance = useCallback(async () => {
+    if (!account || !network.paymentToken) return
+    try {
+      const bal = await clients.balance.readContract({
+        address: network.paymentToken, abi: ERC20_ABI,
+        functionName: 'balanceOf', args: [account],
+      })
+      setBalance((bal as bigint).toString())
+    } catch {}
+  }, [clients, account, network])
 
-  return { collections, isLoading, error };
-}
+  // ─── List NFT ──────────────────────────────────────────────────────────────
+  const listNFT = useCallback(async ({ nftContract, tokenId, price }: {
+    nftContract: string; tokenId: string | number; price: string | number
+  }) => {
+    if (!account || wrongNetwork) return status('error', 'Check connection/network')
+    try {
+      setLoading(true); clearStatus()
+      const priceUnits = toRawUnits(price)
 
-// ─── 2. useCollection ─────────────────────────────────────────────────────────
-// Fetch a single collection by slug or contract address
-export function useCollection(slugOrAddress: string) {
-  const [collection, setCollection] = useState<Collection | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+      status('info', 'Step 1/2: Approving NFT...')
+      const h1 = await writeContractAsync({
+        address: nftContract as `0x${string}`, abi: ERC721_ABI,
+        functionName: 'approve', args: [network.marketplace, BigInt(tokenId)],
+      })
+      await publicClient!.waitForTransactionReceipt({ hash: h1 })
 
-  useEffect(() => {
-    if (!slugOrAddress) return;
-    async function fetch() {
-      setIsLoading(true);
-      const isAddress = slugOrAddress.startsWith("0x");
-      const { data, error } = await supabase
-        .from("collections")
-        .select("*")
-        .eq(isAddress ? "contract_address" : "slug", slugOrAddress)
-        .single();
+      status('info', 'Step 2/2: Listing on Tempo...')
+      const h2 = await writeContractAsync({
+        address: network.marketplace as `0x${string}`, abi: MARKETPLACE_ABI,
+        functionName: 'listNFT', args: [nftContract, BigInt(tokenId), priceUnits],
+      })
+      const receipt = await publicClient!.waitForTransactionReceipt({ hash: h2 })
 
-      if (error) setError(error.message);
-      else setCollection(data);
-      setIsLoading(false);
-    }
-    fetch();
-  }, [slugOrAddress]);
-
-  return { collection, isLoading, error };
-}
-
-// ─── 3: useCollectionStats ──────────────────────────────────────────────────
-// Fetch real-time stats (supply, owners, floor, listed) from RPC
-export function useCollectionStats(contractAddress: string) {
-  const [stats, setStats] = useState<CollectionStats>({
-    totalSupply: 0,
-    uniqueOwners: 0,
-    floorPrice: 0,
-    listedCount: 0,
-    volume24h: 0,
-    royalties: 0,
-    volumeTotal: 0
-});
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Safety check for invalid addresses
-    if (!contractAddress || contractAddress === 'undefined' || contractAddress === 'null') {
-      setIsLoading(false);
-      return;
-    }
-    
-    async function fetch() {
-      setIsLoading(true);
-      setError(null);
-      
       try {
-        const { data, error: rpcError } = await supabase
-          .rpc('get_collection_stats', {
-            // Force lowercase for consistent matching
-            collection_address: contractAddress.toLowerCase()
-          });
-        
-        if (rpcError) {
-          throw new Error(rpcError.message);
-        }
-        
-        // RPC returns an array, grab first row
-        if (data && Array.isArray(data) && data.length > 0) {
-          const row = data[0];
-          setStats({
-            totalSupply: Number(row.total_supply) || 0,
-            uniqueOwners: Number(row.unique_owners) || 0,
-            floorPrice: Number(row.floor_price) || 0,
-            listedCount: Number(row.listed_count) || 0
-          });
-        } else {
-          // No data found — reset to zeros
-          setStats({
-            totalSupply: 0,
-            uniqueOwners: 0,
-            floorPrice: 0,
-            listedCount: 0
-          });
-        }
-      } catch (err: any) {
-        console.error('[useCollectionStats] Error:', err);
-        setError(err.message || 'Failed to fetch collection stats');
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    
-    fetch();
-  }, [contractAddress]);
+        const totalRaw = await publicClient!.readContract({
+          address: network.marketplace as `0x${string}`, abi: MARKETPLACE_ABI,
+          functionName: 'totalListings',
+        }) as bigint
+        await supabase.from('listings').upsert({
+          listing_id:   Number(totalRaw) - 1,
+          seller:       account.toLowerCase(),
+          nft_contract: nftContract.toLowerCase(),
+          token_id:     Number(tokenId),
+          price:        Number(price),
+          active:       true,
+          tx_hash:      h2,
+          block_number: Number(receipt.blockNumber),
+        }, { onConflict: 'listing_id' })
+      } catch (dbErr) { console.warn('Supabase write failed (cron will sync):', dbErr) }
 
-  return { stats, isLoading, error };
-}
+      status('success', 'NFT Listed Successfully!')
+      fetchListings()
+    } catch (err: any) {
+      status('error', parseContractError(err))
+    } finally { setLoading(false) }
+  }, [account, wrongNetwork, network, writeContractAsync, publicClient, fetchListings])
 
-// ─── 4. useFeaturedProjects ───────────────────────────────────────────────────
-// Fetch featured/live projects for the launchpad page
-export function useFeaturedProjects() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // ─── Buy NFT ───────────────────────────────────────────────────────────────
+  // MarketplaceV2: buyNFT(listingId, maxPrice)
+  // maxPrice is slippage protection — pass exact listing price as raw units
+  // listing.price is human USD (e.g. "1.00") → convert to 1000000 (6 decimals)
+  const buyNFT = useCallback(async (listing: Listing) => {
+    if (!account || wrongNetwork) return status('error', 'Check connection')
+    try {
+      setLoading(true); clearStatus()
 
-  useEffect(() => {
-    async function fetch() {
-      setIsLoading(true);
-      const { data, error } = await supabase
-        .from("projects")
-        .select("*")
-        .in("status", ["featured", "live", "approved"])
-        .order("featured_order", { ascending: true });
+      // ✅ FIXED: convert human USD → raw 6-decimal units
+      const rawPrice = toRawUnits(listing.price)
 
-      if (error) setError(error.message);
-      else setProjects(data || []);
-      setIsLoading(false);
-    }
-    fetch();
-  }, []);
+      status('info', 'Step 1/2: Approving payment...')
+      const h1 = await writeContractAsync({
+        address: network.paymentToken as `0x${string}`, abi: ERC20_ABI,
+        functionName: 'approve', args: [network.marketplace, rawPrice],
+      })
+      await publicClient!.waitForTransactionReceipt({ hash: h1 })
 
-  return { projects, isLoading, error };
-}
+      status('info', 'Step 2/2: Completing purchase...')
+      const h2 = await writeContractAsync({
+        address: network.marketplace as `0x${string}`, abi: MARKETPLACE_ABI,
+        functionName: 'buyNFT',
+        // ✅ FIXED: MarketplaceV2 requires (listingId, maxPrice) — not just (listingId)
+        args: [BigInt(listing.listingId), rawPrice],
+      })
+      // ✅ FIXED: wait for confirmation before showing success
+      await publicClient!.waitForTransactionReceipt({ hash: h2 })
 
-// ─── 5. useListings ──────────────────────────────────────────────────────────
-// Fetch active listings WITH NFT metadata via our custom RPC
-export function useListings(nftContract: string) {
-  const [listings, setListings] = useState<any[]>([]); 
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!nftContract || nftContract === 'undefined') return;
-    
-    async function fetch() {
-      setIsLoading(true);
       try {
-        // Use the RPC we built to join Listings + NFTs
-        const { data, error: rpcError } = await supabase
-          .rpc('get_active_listings_with_nfts');
+        await supabase.from('listings')
+          .update({ active: false, updated_at: new Date().toISOString() })
+          .eq('listing_id', Number(listing.listingId))
+      } catch {}
 
-        if (rpcError) throw rpcError;
+      status('success', 'Purchase Complete!')
+      await Promise.all([fetchListings(), fetchBalance()])
+    } catch (err: any) {
+      status('error', parseContractError(err))
+    } finally { setLoading(false) }
+  }, [account, wrongNetwork, network, writeContractAsync, publicClient, fetchListings, fetchBalance])
 
-        if (data) {
-          // Filter by contract in the frontend (solves the case-sensitivity issue)
-          const filtered = data.filter((item: any) => 
-            item.nft_contract?.toLowerCase() === nftContract.toLowerCase()
-          ).map((item: any) => ({
-            ...item,
-            nftAddress: item.nft_contract, // Consistency map
-            displayPrice: (Number(item.price) / 1e6).toFixed(2),
-          }));
-            
-          setListings(filtered);
-        }
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetch();
-  }, [nftContract]);
-
-  return { listings, isLoading, error };
-}
-
-// ─── 6. useSubmitProject ──────────────────────────────────────────────────────
-// Submit a launchpad application
-export function useSubmitProject() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async (form: Partial<Project>) => {
-    setIsLoading(true);
-    setError(null);
-    setIsSuccess(false);
-
-    const { error } = await supabase
-      .from("projects")
-      .insert([{ ...form, status: "pending" }]);
-
-    if (error) setError(error.message);
-    else setIsSuccess(true);
-    setIsLoading(false);
-  };
-
-  return { submit, isLoading, isSuccess, error };
-}
-
-// ─── 7. useAdminProjects ─────────────────────────────────────────────────────
-// Fetch ALL projects for the admin/manage page (pending + all statuses)
-export function useAdminProjects() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // ─── Delist ────────────────────────────────────────────────────────────────
+  const delistNFT = useCallback(async (listingId: string | number) => {
+    if (!account || wrongNetwork) return status('error', 'Check connection')
+    try {
+      setLoading(true); clearStatus()
+      status('info', 'Cancelling listing...')
+      const h1 = await writeContractAsync({
+        address: network.marketplace as `0x${string}`, abi: MARKETPLACE_ABI,
+        functionName: 'cancelListing', args: [BigInt(listingId)],
+      })
+      await publicClient!.waitForTransactionReceipt({ hash: h1 })
+      try {
+        await supabase.from('listings')
+          .update({ active: false, updated_at: new Date().toISOString() })
+          .eq('listing_id', Number(listingId))
+      } catch {}
+      status('success', 'Listing Cancelled!')
+      fetchListings()
+      return true
+    } catch (err: any) {
+      status('error', parseContractError(err))
+      return false
+    } finally { setLoading(false) }
+  }, [account, wrongNetwork, network, writeContractAsync, publicClient, fetchListings])
 
   useEffect(() => {
-    async function fetch() {
-      setIsLoading(true);
-      const { data, error } = await supabase
-        .from("projects")
-        .select("*")
-        .order("submitted_at", { ascending: false });
+    if (isConnected && !wrongNetwork) { fetchListings(); fetchBalance() }
+  }, [isConnected, wrongNetwork, fetchListings, fetchBalance])
 
-      if (error) setError(error.message);
-      else setProjects(data || []);
-      setIsLoading(false);
-    }
-    fetch();
-  }, []);
-
-  const updateStatus = async (
-    id: string,
-    status: string,
-    notes?: string
-  ) => {
-    const { error } = await supabase
-      .from("projects")
-      .update({ status, notes, reviewed_at: new Date().toISOString() })
-      .eq("id", id);
-
-    if (!error) {
-      setProjects((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, status } : p))
-      );
-    }
-    return { error };
-  };
-
-  const featureProject = async (id: string, order: number) => {
-    const { error } = await supabase
-      .from("projects")
-      .update({ status: "featured", featured_order: order })
-      .eq("id", id);
-
-    if (!error) {
-      setProjects((prev) =>
-        prev.map((p) =>
-          p.id === id ? { ...p, status: "featured", featured_order: order } : p
-        )
-      );
-    }
-    return { error };
-  };
-
-  return { projects, isLoading, error, updateStatus, featureProject };
+  return {
+    account, isConnected, chainId, wrongNetwork, network,
+    listings, balance, loading, txStatus,
+    connectWallet: () => connect({ connector: injected() }),
+    disconnect, listNFT, buyNFT, delistNFT, fetchListings, clearStatus,
+  }
 }
 
-// ─── 8. useRealtimeListings ───────────────────────────────────────────────────
-// Subscribe to real-time listing updates for a collection
-export function useRealtimeListings(nftContract: string) {
-  const { listings, isLoading, error } = useListings(nftContract);
-  const [liveListings, setLiveListings] = useState<Listing[]>([]);
-
-  useEffect(() => {
-    setLiveListings(listings);
-  }, [listings]);
-
-  useEffect(() => {
-    if (!nftContract) return;
-
-    const channel = supabase
-      .channel(`listings:${nftContract}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "listings",
-          filter: `nft_contract=eq.${nftContract}`,
-        },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            setLiveListings((prev) => [payload.new as Listing, ...prev]);
-          }
-          if (payload.eventType === "UPDATE") {
-            setLiveListings((prev) =>
-              prev.map((l) =>
-                l.listing_id === (payload.new as Listing).listing_id
-                  ? (payload.new as Listing)
-                  : l
-              )
-            );
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [nftContract]);
-
-  return { listings: liveListings, isLoading, error };
-}
+export const useListNFT   = () => { const { listNFT,   loading, txStatus, clearStatus } = useMarketplace(); return { listNFT,   loading, txStatus, clearStatus } }
+export const useBuyNFT    = () => { const { buyNFT,    loading, txStatus, clearStatus } = useMarketplace(); return { buyNFT,    loading, txStatus, clearStatus } }
+export const useDelistNFT = () => { const { delistNFT, loading, txStatus, clearStatus } = useMarketplace(); return { delistNFT, loading, txStatus, clearStatus } }
