@@ -25,9 +25,15 @@ function shortenAddress(addr) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
+/**
+ * Convert raw 6-decimal units to display USD
+ * DB stores: 25000000 (raw atomic units)
+ * Display: 25.00 USD
+ */
 function fmtPrice(raw) {
   if (!raw) return "—";
-  return Number(raw).toFixed(2);
+  // Raw units from DB have 6 decimals (pathUSD) - divide by 1e6
+  return (Number(raw) / 1e6).toFixed(2);
 }
 
 function CopyButton({ text }) {
@@ -71,7 +77,15 @@ function Section({ title, icon: Icon, children, defaultOpen = true }) {
 function BuyModal({ listing, metadata, onClose }) {
   const { buyNFT, loading, txStatus, clearStatus } = useMarketplace();
 
-  async function handleBuy() { clearStatus(); await buyNFT(listing); }
+  async function handleBuy() { 
+    clearStatus(); 
+    // Handle both snake_case and camelCase - Supabase returns listing_id
+    const listingWithId = {
+      ...listing,
+      listingId: listing.listingId || listing.listing_id
+    };
+    await buyNFT(listingWithId); 
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -199,7 +213,7 @@ export default function NFTItemPage() {
   const nftContract = collection?.contract_address;
   const baseUri     = collection?.metadata_base_uri;
 
-  // ✅ Now passes all 3 args correctly
+  // Now passes all 3 args correctly
   const { metadata, loading: metaLoading } = useNFTMetadata(nftContract, tokenId, baseUri);
   const { listings } = useListings(nftContract);
   const { clearStatus } = useMarketplace();
@@ -208,10 +222,11 @@ export default function NFTItemPage() {
   const [showBuy,   setShowBuy]   = useState(false);
   const [showOffer, setShowOffer] = useState(false);
   const [showList,  setShowList]  = useState(false);
-  const [showDelist, setShowDelist] = useState(false); // ← NEW
+  const [showDelist, setShowDelist] = useState(false);
   const [liked,     setLiked]     = useState(false);
   const [shared,    setShared]    = useState(false);
 
+  // Find active listing for this token
   const listing   = listings.find(l => Number(l.token_id) === Number(tokenId) && l.active);
   const isOwner   = address && listing?.seller?.toLowerCase() === address?.toLowerCase();
   const traits    = metadata ? formatTraits(metadata.attributes || []) : [];
@@ -338,7 +353,7 @@ export default function NFTItemPage() {
                   <div className="text-xs mt-1" style={{ color: "#9da7b3" }}>Listed by {shortenAddress(listing.seller)}</div>
                 </div>
                 {isOwner ? (
-                  // ← CHANGED: Show "Cancel Listing" button that opens DelistModal
+                  // Show "Cancel Listing" button that opens DelistModal
                   <button 
                     onClick={() => setShowDelist(true)} 
                     className="w-full h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
@@ -459,7 +474,7 @@ export default function NFTItemPage() {
           onClose={() => setShowList(false)}
         />
       )}
-      {/* ← NEW: DelistModal */}
+      {/* DelistModal */}
       {showDelist && listing && (
         <DelistModal
           nft={{
