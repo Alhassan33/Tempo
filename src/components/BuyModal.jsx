@@ -25,7 +25,7 @@ const ERC20_ABI = [
     outputs: [{ name: "", type: "uint256" }] },
 ];
 
-// ✅ V2 ABI — buyNFT takes (listingId, maxPrice)
+// V2 ABI — buyNFT takes (listingId, maxPrice)
 const MARKETPLACE_ABI = [
   { name: "buyNFT", type: "function", stateMutability: "nonpayable",
     inputs: [
@@ -64,6 +64,9 @@ export default function BuyModal({ listing, onClose, onSuccess }) {
   // listing.price is raw units (e.g. 25000000). Always ÷1e6 for display.
   const priceRaw     = BigInt(Math.round(Number(listing?.price || 0)));
   const displayPrice = (Number(listing?.price || 0) / 1e6).toFixed(2);
+  
+  // Get listing ID (handles both snake_case and camelCase)
+  const listingId = listing?.listing_id ?? listing?.listingId ?? '0';
 
   // Fetch balance on open
   useEffect(() => {
@@ -110,7 +113,7 @@ export default function BuyModal({ listing, onClose, onSuccess }) {
         address: MARKETPLACE_ADDRESS,
         abi: MARKETPLACE_ABI,
         functionName: "buyNFT",
-        args: [BigInt(listing.listing_id), priceRaw],  // ✅ V2 signature
+        args: [BigInt(listingId), priceRaw],  // V2 signature
       });
       setMsg("Waiting for confirmation...");
       await publicClient.waitForTransactionReceipt({ hash: h2 });
@@ -119,7 +122,7 @@ export default function BuyModal({ listing, onClose, onSuccess }) {
       try {
         await supabase.from("listings")
           .update({ active: false, updated_at: new Date().toISOString() })
-          .eq("listing_id", Number(listing.listing_id));
+          .eq("listing_id", Number(listingId));
       } catch {}
 
       setStep("done");
@@ -181,7 +184,7 @@ export default function BuyModal({ listing, onClose, onSuccess }) {
           <div className="flex gap-4 p-4 rounded-2xl" style={{ background: "#161d28" }}>
             <div className="w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0"
               style={{ background: "#121821" }}>
-              <NFTImage src={listing.image} className="w-full h-full object-cover" />
+              <NFTImage src={listing.image || listing.image_url} className="w-full h-full object-cover" />
             </div>
             <div className="flex-1 min-w-0 py-1">
               <div className="text-[10px] font-bold uppercase tracking-widest mb-1"
