@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Import Satoshi font */
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,700,900&display=swap');
+
 @layer base {
   *,
   *::before,
@@ -15,26 +18,58 @@
     scroll-behavior: smooth;
   }
 
+  :root {
+    /* PRIMARY BRAND COLORS - Neon Teal */
+    --brand-primary: #00E6A8;
+    --brand-primary-hover: #00FFC6;
+    --brand-primary-glow: rgba(0, 230, 168, 0.3);
+    
+    /* BACKGROUND */
+    --bg-base: #0A0F14;
+    --bg-surface: #11161D;
+    --bg-surface-elevated: #121A22;
+    --bg-card: #161d28;
+    
+    /* TEXT */
+    --text-primary: #EDEDED;
+    --text-secondary: #9CA3AF;
+    --text-muted: #6B7280;
+    
+    /* SECONDARY ACCENT */
+    --accent-secondary: #1F7A7A;
+    --accent-secondary-light: #2A9999;
+    
+    /* BORDERS */
+    --border-subtle: rgba(255, 255, 255, 0.05);
+    --border-medium: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.12);
+    
+    /* STATES */
+    --error: #EF4444;
+    --success: #22C55E;
+    --warning: #F59E0B;
+  }
+
   body {
-    /* HELVETICA NEUE: The professional standard we're switching to */
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    /* Deep "OpenSea" black for high-end contrast */
-    background-color: #03080f; 
-    color: #e6edf3;
+    /* Satoshi as primary, Helvetica Neue as fallback */
+    font-family: 'Satoshi', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
     min-height: 100vh;
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Your Brand-specific Cyan Grid - kept at 32px for density */
+  /* Subtle grid pattern */
   body::before {
     content: "";
     position: fixed;
     inset: 0;
     background-image: 
-      linear-gradient(rgba(34, 211, 238, 0.02) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(34, 211, 238, 0.02) 1px, transparent 1px);
-    background-size: 32px 32px;
+      linear-gradient(rgba(0, 230, 168, 0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 230, 168, 0.015) 1px, transparent 1px);
+    background-size: 40px 40px;
     pointer-events: none;
     z-index: 0;
   }
@@ -45,67 +80,113 @@
   }
 
   ::-webkit-scrollbar {
-    width: 5px;
+    width: 6px;
+    height: 6px;
   }
+  
   ::-webkit-scrollbar-track {
-    background: #03080f;
+    background: var(--bg-base);
   }
+  
   ::-webkit-scrollbar-thumb {
-    background: rgba(34, 211, 238, 0.1);
+    background: var(--accent-secondary);
     border-radius: 3px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--brand-primary);
   }
 }
 
 @layer utilities {
-  /* BRAND TYPOGRAPHY */
+  /* TYPOGRAPHY */
   .font-display {
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    font-weight: 900;
-    letter-spacing: -0.03em;
-    text-transform: uppercase;
-  }
-
-  /* Technical Mono ONLY for IDs and small stats */
-  .font-mono-web3 {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: 'Satoshi', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-weight: 700;
     letter-spacing: -0.02em;
   }
 
-  /* BRAND COLORS */
-  .text-brand { color: #22d3ee; }
-  .bg-brand { background-color: #22d3ee; }
-  .border-brand { border-color: #22d3ee; }
+  .font-mono-web3 {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    letter-spacing: -0.01em;
+  }
 
-  /* PREMIUM OPEN-SEA STYLE CARDS */
+  /* BRAND COLORS */
+  .text-brand { color: var(--brand-primary); }
+  .bg-brand { background-color: var(--brand-primary); }
+  .border-brand { border-color: var(--brand-primary); }
+  
+  .text-brand-hover { color: var(--brand-primary-hover); }
+  .bg-brand-hover { background-color: var(--brand-primary-hover); }
+
+  /* CARDS */
   .nyan-card {
-    background: #0b121d;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 16px;
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .nyan-card:hover {
     transform: translateY(-4px);
-    border-color: #22d3ee;
-    box-shadow: 0 0 25px rgba(34, 211, 238, 0.12);
+    border-color: var(--brand-primary);
+    box-shadow: 0 8px 32px rgba(0, 230, 168, 0.12);
   }
 
-  /* CAROUSEL SPECIFIC UTILITIES */
-  .hero-indicator {
-    @apply h-1 rounded-full bg-white/20 transition-all duration-500;
-  }
-  
-  .hero-indicator-active {
-    @apply w-10 bg-[#22d3ee];
+  /* BUTTONS */
+  .btn-primary {
+    background: var(--brand-primary);
+    color: var(--bg-base);
+    font-weight: 600;
+    transition: all 0.2s ease;
   }
 
+  .btn-primary:hover {
+    background: var(--brand-primary-hover);
+    box-shadow: 0 0 24px var(--brand-primary-glow);
+  }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--text-primary);
+    border: 1px solid var(--border-medium);
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--accent-secondary);
+    background: rgba(31, 122, 122, 0.1);
+  }
+
+  /* GLASS MORPHISM */
   .glass-morph {
-    background: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(17, 22, 29, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-medium);
   }
 
+  /* STICKY ACTION BAR */
+  .sticky-action-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(10, 15, 20, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border-medium);
+    transform: translateY(0);
+    transition: transform 0.3s ease;
+  }
+
+  .sticky-action-bar.hidden {
+    transform: translateY(100%);
+  }
+
+  /* ANIMATIONS */
   .fade-up {
     animation: fadeUp 0.5s ease-out forwards;
   }
@@ -113,5 +194,55 @@
   @keyframes fadeUp {
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
+  }
+
+  .slide-up {
+    animation: slideUp 0.3s ease-out forwards;
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(100%); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* GRID VIEW TOGGLES */
+  .view-grid-1 {
+    grid-template-columns: repeat(1, 1fr);
+  }
+  
+  .view-grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .view-grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .view-grid-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  
+  .view-grid-5 {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  /* LIST VIEW */
+  .view-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* HERO INDICATORS */
+  .hero-indicator {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.15);
+    transition: all 0.3s ease;
+  }
+  
+  .hero-indicator-active {
+    width: 32px;
+    background: var(--brand-primary);
   }
 }
