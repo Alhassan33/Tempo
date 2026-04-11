@@ -42,6 +42,18 @@ export function rawToBigInt(raw: string | number): bigint {
   return BigInt(Math.round(Number(raw)))
 }
 
+/** Get listing ID from listing object (handles both snake_case and camelCase) */
+function getListingId(listing: any): string {
+  // Handle both snake_case (from Supabase) and camelCase (from mapRow)
+  return String(listing?.listingId ?? listing?.listing_id ?? '0')
+}
+
+/** Get price from listing object (handles both snake_case and camelCase) */
+function getListingPrice(listing: any): string {
+  // Price should always be in raw units from DB
+  return String(listing?.price ?? '0')
+}
+
 // ─── Error decoder ────────────────────────────────────────────────────────────
 function parseContractError(err: any): string {
   const msg = err?.shortMessage || err?.message || ''
@@ -204,14 +216,21 @@ export function useMarketplace() {
 
   // ─── buyNFT ────────────────────────────────────────────────────────────────
   // listing.price = raw units e.g. "25000000"
+  // listing.listingId or listing.listing_id = the listing ID
   // MarketplaceV2: buyNFT(listingId, maxPrice) — maxPrice = same raw units
-  const buyNFT = useCallback(async (listing: Listing) => {
+  const buyNFT = useCallback(async (listing: any) => {
     if (!account || wrongNetwork) return status('error', 'Check connection')
     try {
       setLoading(true); clearStatus()
 
-      // listing.price is already raw units from DB
-      const priceRaw = rawToBigInt(listing.price)
+      // Get listing ID (handles both snake_case and camelCase)
+      const listingId = getListingId(listing)
+      // Get price in raw units
+      const priceRaw = rawToBigInt(getListingPrice(listing))
+
+      if (listingId === '0') {
+        throw new Error('Invalid listing ID')
+      }
 
       status('info', 'Step 1/2: Approving pathUSD...')
       const h1 = await writeContractAsync({
@@ -225,7 +244,7 @@ export function useMarketplace() {
         address: network.marketplace as `0x${string}`, abi: MARKETPLACE_ABI,
         functionName: 'buyNFT',
         // ✅ V2: (listingId, maxPrice) — prevents price-change grief
-        args: [BigInt(listing.listingId), priceRaw],
+        args: [BigInt(listingId), priceRaw],
       })
       await publicClient!.waitForTransactionReceipt({ hash: h2 })
 
@@ -233,7 +252,7 @@ export function useMarketplace() {
       try {
         await supabase.from('listings')
           .update({ active: false, updated_at: new Date().toISOString() })
-          .eq('listing_id', Number(listing.listingId))
+          .eq('listing_id', Number(listingId))
       } catch {}
 
       status('success', 'Purchase Complete!')
