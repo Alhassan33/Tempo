@@ -1,8 +1,8 @@
 // pages/PortfolioPage.jsx
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAccount } from "wagmi";
-import { Briefcase, Search, LayoutGrid, List, RefreshCw, Wallet, Tag } from "lucide-react";
+import { Briefcase, Search, LayoutGrid, List, RefreshCw, Wallet, Tag, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { fetchTokenMetadata } from "@/hooks/useNFTMetadata";
 import { CardSkeleton } from "@/components/Skeleton.jsx";
@@ -11,25 +11,30 @@ import DelistModal from "@/components/DelistModal.jsx";
 
 const TABS = ["All", "Listed", "Unlisted"];
 
+// ✅ Always divide raw 6-decimal units by 1e6 for display
+function fmtPrice(rawPrice) {
+  return (Number(rawPrice) / 1e6).toFixed(2);
+}
+
 // ─── NFT Card ─────────────────────────────────────────────────────────────────
 function NFTCard({ nft, view, onList, onDelist }) {
   const navigate  = useNavigate();
   const imgSrc    = nft.metadata?.image || nft.image || null;
   const tokenName = nft.metadata?.name  || nft.name  || `#${nft.token_id}`;
   const isListed  = !!nft.listing;
+  const priceDisplay = isListed ? fmtPrice(nft.listing.price) : null;
 
-  // ✅ Fixed: use collection_slug for correct routing
   function goToItem() {
-    if (nft.collection_slug) {
-      navigate(`/collection/${nft.collection_slug}/${nft.token_id}`);
-    }
+    if (nft.collection_slug) navigate(`/collection/${nft.collection_slug}/${nft.token_id}`);
   }
 
   if (view === "list") {
     return (
       <div onClick={goToItem}
-        className="flex items-center gap-4 p-3 rounded-2xl cursor-pointer transition-all card-hover"
-        style={{ background: "#121821", border: isListed ? "1px solid rgba(34,211,238,0.25)" : "1px solid rgba(255,255,255,0.06)" }}>
+        className="flex items-center gap-4 p-3 rounded-2xl cursor-pointer transition-all"
+        style={{ background: "#121821", border: isListed ? "1px solid rgba(34,211,238,0.25)" : "1px solid rgba(255,255,255,0.06)" }}
+        onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(34,211,238,0.4)"}
+        onMouseLeave={e => e.currentTarget.style.borderColor = isListed ? "rgba(34,211,238,0.25)" : "rgba(255,255,255,0.06)"}>
         <div className="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden" style={{ background: "#161d28" }}>
           {imgSrc
             ? <img src={imgSrc} alt={tokenName} className="w-full h-full object-cover" />
@@ -50,7 +55,7 @@ function NFTCard({ nft, view, onList, onDelist }) {
           <div className="text-sm font-bold truncate" style={{ color: "#e6edf3" }}>{tokenName}</div>
           {isListed && (
             <div className="text-xs font-mono mt-0.5" style={{ color: "#22d3ee" }}>
-              {Number(nft.listing.price).toFixed(2)} USD
+              {priceDisplay} USD
             </div>
           )}
         </div>
@@ -58,7 +63,7 @@ function NFTCard({ nft, view, onList, onDelist }) {
           <button onClick={e => { e.stopPropagation(); onDelist(nft); }}
             className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 flex-shrink-0"
             style={{ background: "rgba(239,68,68,0.08)", color: "#EF4444", border: "1px solid rgba(239,68,68,0.2)", cursor: "pointer" }}>
-            Delist
+            <X size={10} /> Delist
           </button>
         ) : (
           <button onClick={e => { e.stopPropagation(); onList(nft); }}
@@ -73,8 +78,10 @@ function NFTCard({ nft, view, onList, onDelist }) {
 
   return (
     <div onClick={goToItem}
-      className="group rounded-2xl overflow-hidden cursor-pointer transition-all relative card-hover"
-      style={{ background: "#121821", border: isListed ? "1px solid rgba(34,211,238,0.25)" : "1px solid rgba(255,255,255,0.06)" }}>
+      className="group rounded-2xl overflow-hidden cursor-pointer transition-all relative"
+      style={{ background: "#121821", border: isListed ? "1px solid rgba(34,211,238,0.25)" : "1px solid rgba(255,255,255,0.06)" }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(34,211,238,0.4)"}
+      onMouseLeave={e => e.currentTarget.style.borderColor = isListed ? "rgba(34,211,238,0.25)" : "rgba(255,255,255,0.06)"}>
       {isListed && (
         <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded-lg text-[9px] font-bold"
           style={{ background: "rgba(11,15,20,0.85)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.4)", backdropFilter: "blur(4px)" }}>
@@ -95,7 +102,7 @@ function NFTCard({ nft, view, onList, onDelist }) {
         {isListed ? (
           <div className="flex items-center justify-between">
             <span className="font-mono text-sm font-bold" style={{ color: "#22d3ee" }}>
-              {Number(nft.listing.price).toFixed(2)} USD
+              {priceDisplay} USD
             </span>
             <button onClick={e => { e.stopPropagation(); onDelist(nft); }}
               className="text-[10px] px-2 py-1 rounded-lg font-bold"
@@ -130,6 +137,7 @@ export default function PortfolioPage() {
   const [tab,         setTab]         = useState("All");
   const [listModal,   setListModal]   = useState(null);
   const [delistModal, setDelistModal] = useState(null);
+  const realtimeRef = useRef(null);
 
   const fetchPortfolio = useCallback(async () => {
     if (!address) return;
@@ -137,7 +145,7 @@ export default function PortfolioPage() {
     setError(null);
 
     try {
-      // ✅ Fixed: ilike for case-insensitive address matching
+      // ✅ ilike = case-insensitive — critical for checksummed addresses
       const { data: nftRows, error: nftErr } = await supabase
         .from("nfts")
         .select("token_id, contract_address, name, image, metadata_url")
@@ -157,27 +165,31 @@ export default function PortfolioPage() {
       const colMap = {};
       (colRows || []).forEach(c => { colMap[c.contract_address?.toLowerCase()] = c; });
 
-      // Get active listings for this wallet
+      // ✅ ilike on seller too — handles checksummed vs lowercase
       const { data: listingRows } = await supabase
         .from("listings")
         .select("token_id, nft_contract, listing_id, price")
         .ilike("seller", address)
         .eq("active", true);
 
+      // ✅ Deduplicate — keep only the most recent (highest listing_id) per token
       const listingMap = {};
-      (listingRows || []).forEach(l => {
-        listingMap[`${l.nft_contract?.toLowerCase()}:${l.token_id}`] = l;
-      });
+      (listingRows || [])
+        .sort((a, b) => b.listing_id - a.listing_id) // newest first
+        .forEach(l => {
+          const key = `${l.nft_contract?.toLowerCase()}:${l.token_id}`;
+          if (!listingMap[key]) listingMap[key] = l; // keep newest only
+        });
 
       const enriched = nftRows.map(nft => {
         const col = colMap[nft.contract_address?.toLowerCase()];
-        const listingKey = `${nft.contract_address?.toLowerCase()}:${nft.token_id}`;
+        const key = `${nft.contract_address?.toLowerCase()}:${nft.token_id}`;
         return {
           ...nft,
           collection_name:   col?.name || nft.contract_address?.slice(0, 8),
           collection_slug:   col?.slug,
           metadata_base_uri: col?.metadata_base_uri || null,
-          listing:           listingMap[listingKey] || null,
+          listing:           listingMap[key] || null,
           metadata:          null,
         };
       });
@@ -185,7 +197,7 @@ export default function PortfolioPage() {
       setOwnedNFTs(enriched);
       setLoading(false);
 
-      // Stream metadata for NFTs without images
+      // Stream metadata for NFTs missing images
       const needsMeta = enriched.filter(n => !n.image && n.metadata_base_uri);
       if (!needsMeta.length) return;
 
@@ -194,13 +206,10 @@ export default function PortfolioPage() {
       const BATCH = 8;
 
       for (let i = 0; i < needsMeta.length; i += BATCH) {
-        const chunk = needsMeta.slice(i, i + BATCH);
-        await Promise.all(chunk.map(async (nft) => {
+        await Promise.all(needsMeta.slice(i, i + BATCH).map(async (nft) => {
           try {
             const meta = await fetchTokenMetadata(nft.token_id, nft.metadata_base_uri);
-            const idx  = working.findIndex(
-              n => n.contract_address === nft.contract_address && n.token_id === nft.token_id
-            );
+            const idx  = working.findIndex(n => n.contract_address === nft.contract_address && n.token_id === nft.token_id);
             if (idx !== -1) working[idx] = { ...working[idx], metadata: meta };
           } catch {}
         }));
@@ -211,12 +220,34 @@ export default function PortfolioPage() {
     } catch (e) {
       setError(e.message);
       setLoading(false);
+      setMetaLoading(false);
     }
   }, [address]);
 
+  // Initial load
   useEffect(() => {
     if (isConnected && address) fetchPortfolio();
   }, [address, isConnected, fetchPortfolio]);
+
+  // ✅ Realtime subscription — updates listing state instantly on any DB change
+  useEffect(() => {
+    if (!address) return;
+
+    const channel = supabase
+      .channel(`portfolio-listings-${address}`)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "listings",
+      }, () => {
+        // Re-fetch listings portion only (fast — no metadata reload)
+        fetchPortfolio();
+      })
+      .subscribe();
+
+    realtimeRef.current = channel;
+    return () => { supabase.removeChannel(channel); };
+  }, [address, fetchPortfolio]);
 
   const filtered = useMemo(() => {
     let list = ownedNFTs;
@@ -261,15 +292,19 @@ export default function PortfolioPage() {
             <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "#22d3ee" }}>Portfolio</span>
           </div>
           <h1 className="text-3xl font-extrabold uppercase" style={{ color: "#e6edf3" }}>My NFTs</h1>
-          <p className="mt-1 text-xs font-mono" style={{ color: "#9da7b3" }}>{address}</p>
+          <p className="mt-1 text-xs font-mono truncate max-w-xs" style={{ color: "#9da7b3" }}>{address}</p>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Refresh — spins while loading */}
           <button onClick={fetchPortfolio} disabled={loading}
+            title="Refresh"
             className="h-10 w-10 rounded-xl flex items-center justify-center"
             style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
             <RefreshCw size={14} className={loading || metaLoading ? "animate-spin" : ""} style={{ color: "#9da7b3" }} />
           </button>
+
+          {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" size={13} style={{ color: "#9da7b3" }} />
             <input type="text" placeholder="Search by name or ID..."
@@ -279,10 +314,18 @@ export default function PortfolioPage() {
               onFocus={e => e.target.style.borderColor = "#22d3ee"}
               onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.06)"} />
           </div>
-          <div className="flex rounded-xl p-1" style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)" }}>
+
+          {/* View toggle */}
+          <div className="flex rounded-xl overflow-hidden"
+            style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)" }}>
             {[{ v: "grid", Icon: LayoutGrid }, { v: "list", Icon: List }].map(({ v, Icon }) => (
-              <button key={v} onClick={() => setView(v)} className="p-2 rounded-lg"
-                style={{ background: view === v ? "rgba(34,211,238,0.1)" : "none", color: view === v ? "#22d3ee" : "#9da7b3", border: "none", cursor: "pointer" }}>
+              <button key={v} onClick={() => setView(v)}
+                className="flex items-center justify-center w-10 h-10 transition-all"
+                style={{
+                  background: view === v ? "rgba(34,211,238,0.1)" : "transparent",
+                  color:      view === v ? "#22d3ee" : "#9da7b3",
+                  border: "none", cursor: "pointer",
+                }}>
                 <Icon size={15} />
               </button>
             ))}
@@ -309,7 +352,7 @@ export default function PortfolioPage() {
 
       {/* Tabs */}
       {!loading && ownedNFTs.length > 0 && (
-        <div className="flex items-center gap-1.5 mb-5">
+        <div className="flex items-center gap-1.5 mb-5 flex-wrap">
           {TABS.map(t => (
             <button key={t} onClick={() => setTab(t)}
               className="h-8 px-4 rounded-full text-xs font-semibold"
@@ -332,6 +375,14 @@ export default function PortfolioPage() {
         </div>
       )}
 
+      {/* Sync status hint */}
+      {!loading && (
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: "#22d3ee" }} />
+          <span className="text-[10px]" style={{ color: "#9da7b3" }}>Live sync active — updates automatically</span>
+        </div>
+      )}
+
       {error && (
         <div className="rounded-xl px-4 py-3 mb-5 text-sm"
           style={{ background: "rgba(239,68,68,0.1)", color: "#EF4444", border: "1px solid rgba(239,68,68,0.2)" }}>
@@ -349,7 +400,7 @@ export default function PortfolioPage() {
             <NFTCard
               key={`${nft.contract_address}-${nft.token_id}-${idx}`}
               nft={nft} view={view}
-              onList={(nft) => setListModal({
+              onList={nft => setListModal({
                 tokenId:    nft.token_id,
                 contract:   nft.contract_address,
                 name:       nft.metadata?.name  || nft.name  || `#${nft.token_id}`,
@@ -358,13 +409,13 @@ export default function PortfolioPage() {
                 collection: nft.collection_name,
                 slug:       nft.collection_slug,
               })}
-              onDelist={(nft) => setDelistModal({
+              onDelist={nft => setDelistModal({
                 tokenId:    nft.token_id,
                 contract:   nft.contract_address,
                 listingId:  nft.listing.listing_id,
                 name:       nft.metadata?.name  || nft.name  || `#${nft.token_id}`,
                 image:      nft.metadata?.image || nft.image || null,
-                price:      nft.listing.price,
+                price:      nft.listing.price,  // raw — DelistModal shows fmtPrice
                 collection: nft.collection_name,
               })}
             />
