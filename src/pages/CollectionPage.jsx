@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { CheckCircle2, ExternalLink, Twitter, Globe, TrendingDown, TrendingUp, ShoppingCart } from "lucide-react";
+import { CheckCircle2, ExternalLink, Twitter, Globe, TrendingDown, TrendingUp, ShoppingCart, Zap } from "lucide-react";
 import { useCollection, useRealtimeListings, useCollectionStats } from "@/hooks/useSupabase";
 import NFTImage from "@/components/NFTImage.jsx";
 import { CardSkeleton } from "@/components/Skeleton.jsx";
@@ -12,7 +12,7 @@ const TABS        = ["Items", "Activity", "Bids", "Analytics"];
 const EXPLORER_BASE = "https://explore.tempo.xyz";
 const PAGE_SIZE   = 50;
 
-// ─── Stat Card — UNTOUCHED ────────────────────────────────────────────────────
+// ─── Stat Card ────────────────────────────────────────────────────────────────
 const StatItem = ({ label, value, subValue, isTrend }) => (
   <div className="rounded-2xl p-4" style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.05)" }}>
     <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#9da7b3" }}>{label}</div>
@@ -30,96 +30,118 @@ const StatItem = ({ label, value, subValue, isTrend }) => (
   </div>
 );
 
-// ─── NFT Grid Card — OpenSea style ───────────────────────────────────────────
-// No buy button on the card body.
-// Listed cards show price and an animated "Buy Now" that slides up on hover.
-// Clicking anywhere navigates to the item page.
-function NFTGridItem({ token, collectionName, slug, listing, onBuyClick }) {
+// ─── NFT Grid Card ────────────────────────────────────────────────────────────
+// OpenSea-style: Clean card with item number, price, no buy button on card
+// Clicking navigates to item page where buy action happens
+function NFTGridCard({ token, collectionName, slug, listing, rank }) {
   const navigate = useNavigate();
 
-  function handleClick(e) {
-    // If they clicked the buy button, open modal instead of navigating
-    if (e.defaultPrevented) return;
-    navigate(`/collection/${slug}/${token.tokenId}`);
-  }
-
-  function handleBuyNow(e) {
-    e.preventDefault(); // stop navigation
-    onBuyClick(listing);
-  }
+  const isListed = !!listing;
+  const price = listing ? (Number(listing.price) / 1e6).toFixed(2) : null;
 
   return (
     <div
-      onClick={handleClick}
+      onClick={() => navigate(`/collection/${slug}/${token.tokenId || token.token_id}`)}
       className="group rounded-2xl overflow-hidden cursor-pointer relative"
       style={{
         background: "#121821",
-        border: listing ? "1px solid rgba(34,211,238,0.2)" : "1px solid rgba(255,255,255,0.05)",
-        transition: "border-color 0.2s, transform 0.2s",
+        border: isListed ? "1px solid rgba(34,211,238,0.2)" : "1px solid rgba(255,255,255,0.05)",
+        transition: "all 0.2s ease",
       }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = listing ? "rgba(34,211,238,0.45)" : "rgba(255,255,255,0.12)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = listing ? "rgba(34,211,238,0.2)" : "rgba(255,255,255,0.05)"; e.currentTarget.style.transform = "translateY(0)"; }}
+      onMouseEnter={e => { 
+        e.currentTarget.style.borderColor = isListed ? "rgba(34,211,238,0.5)" : "rgba(255,255,255,0.12)"; 
+        e.currentTarget.style.transform = "translateY(-4px)"; 
+        e.currentTarget.style.boxShadow = isListed ? "0 12px 32px rgba(34,211,238,0.12)" : "0 8px 24px rgba(0,0,0,0.3)";
+      }}
+      onMouseLeave={e => { 
+        e.currentTarget.style.borderColor = isListed ? "rgba(34,211,238,0.2)" : "rgba(255,255,255,0.05)"; 
+        e.currentTarget.style.transform = "translateY(0)"; 
+        e.currentTarget.style.boxShadow = "none";
+      }}
     >
-      {/* Image */}
+      {/* Image Container */}
       <div className="relative aspect-square overflow-hidden" style={{ background: "#161d28" }}>
-        <NFTImage
-          src={token.image}
+        <img
+          src={token.image || listing?.image || listing?.image_url || ""}
+          alt={token.name || listing?.name}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          onError={e => { e.target.style.display = "none"; }}
         />
 
-        {/* FOR SALE badge */}
-        {listing && (
-          <div className="absolute top-2 left-2 text-[9px] font-bold px-2 py-0.5 rounded-lg"
-            style={{ background: "rgba(11,15,20,0.85)", color: "#22d3ee",
-              border: "1px solid rgba(34,211,238,0.4)", backdropFilter: "blur(4px)" }}>
+        {/* FOR SALE badge - top left */}
+        {isListed && (
+          <div className="absolute top-2 left-2 text-[9px] font-bold px-2 py-1 rounded-lg"
+            style={{ 
+              background: "rgba(11,15,20,0.9)", 
+              color: "#22d3ee",
+              border: "1px solid rgba(34,211,238,0.4)", 
+              backdropFilter: "blur(4px)" 
+            }}>
             ● FOR SALE
           </div>
         )}
 
-        {/* Animated Buy Now — slides up on hover, only on listed cards */}
-        {listing && (
-          <div
-            className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-1.5 py-3 font-bold text-xs transition-all duration-300"
-            style={{
-              background: "linear-gradient(to top, rgba(34,211,238,0.95), rgba(34,211,238,0.85))",
-              color: "#0b0f14",
-              transform: "translateY(100%)",
-              fontFamily: "Syne, sans-serif",
-            }}
-            // CSS trick: parent group-hover reveals this
-            // We use a style tag approach via onMouseEnter on the card above
-            // Instead, use Tailwind group-hover via className:
-            onClick={handleBuyNow}
-          >
-            <ShoppingCart size={13} />
-            Buy Now
+        {/* Rank badge - top right (if available) */}
+        {rank && (
+          <div className="absolute top-2 right-2 text-[9px] font-bold px-2 py-1 rounded-lg"
+            style={{ 
+              background: "rgba(11,15,20,0.9)", 
+              color: "#a78bfa",
+              border: "1px solid rgba(167,139,250,0.4)", 
+              backdropFilter: "blur(4px)" 
+            }}>
+            Rank #{rank}
           </div>
         )}
       </div>
 
-      {/* Info */}
+      {/* Card Info - Clean OpenSea Style */}
       <div className="p-3">
+        {/* Collection name */}
         <div className="text-[9px] font-bold uppercase tracking-widest mb-0.5 truncate" style={{ color: "#9da7b3" }}>
           {collectionName}
         </div>
-        <div className="text-sm font-bold truncate" style={{ color: "#e6edf3" }}>
-          {token.name}
+        
+        {/* Token name / number */}
+        <div className="text-sm font-bold truncate mb-2" style={{ color: "#e6edf3" }}>
+          {token.name || listing?.name || `${collectionName} #${token.tokenId || token.token_id}`}
         </div>
 
-        {/* Price row — only if listed */}
-        {listing ? (
-          <div className="flex items-center justify-between mt-1.5">
+        {/* Price row - only if listed */}
+        {isListed ? (
+          <div className="flex items-center justify-between">
             <div>
-              <div className="text-[9px] uppercase tracking-wide" style={{ color: "#9da7b3" }}>Price</div>
+              <div className="text-[9px] uppercase tracking-wide mb-0.5" style={{ color: "#9da7b3" }}>Price</div>
               <div className="font-mono text-sm font-bold" style={{ color: "#22d3ee" }}>
-                {/* listing.price is raw units → ÷1e6 for display */}
-                {(Number(listing.price) / 1e6).toFixed(2)} USD
+                {price} USD
               </div>
+            </div>
+            {/* Item number badge */}
+            <div 
+              className="text-[10px] font-mono px-2 py-1 rounded-lg"
+              style={{ 
+                background: "rgba(255,255,255,0.05)", 
+                color: "#9da7b3" 
+              }}
+            >
+              #{token.tokenId || token.token_id}
             </div>
           </div>
         ) : (
-          <div className="mt-1.5 text-[10px]" style={{ color: "rgba(157,167,179,0.4)" }}>
-            Not listed
+          <div className="flex items-center justify-between">
+            <div className="text-[10px]" style={{ color: "rgba(157,167,179,0.4)" }}>
+              Not listed
+            </div>
+            {/* Item number badge */}
+            <div 
+              className="text-[10px] font-mono px-2 py-1 rounded-lg"
+              style={{ 
+                background: "rgba(255,255,255,0.05)", 
+                color: "#9da7b3" 
+              }}
+            >
+              #{token.tokenId || token.token_id}
+            </div>
           </div>
         )}
       </div>
@@ -127,11 +149,46 @@ function NFTGridItem({ token, collectionName, slug, listing, onBuyClick }) {
   );
 }
 
+// ─── Sweep Button Component ───────────────────────────────────────────────────
+function SweepButton({ listings, onSweep }) {
+  const floorPrice = listings.length > 0 ? (Number(listings[0].price) / 1e6).toFixed(2) : null;
+  const listedCount = listings.length;
+
+  if (listedCount === 0) return null;
+
+  return (
+    <button
+      onClick={onSweep}
+      className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
+      style={{
+        background: "linear-gradient(135deg, rgba(34,211,238,0.15), rgba(34,211,238,0.05))",
+        color: "#22d3ee",
+        border: "1px solid rgba(34,211,238,0.3)",
+        cursor: "pointer",
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.background = "linear-gradient(135deg, rgba(34,211,238,0.25), rgba(34,211,238,0.1))";
+        e.currentTarget.style.borderColor = "rgba(34,211,238,0.5)";
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.background = "linear-gradient(135deg, rgba(34,211,238,0.15), rgba(34,211,238,0.05))";
+        e.currentTarget.style.borderColor = "rgba(34,211,238,0.3)";
+      }}
+    >
+      <Zap size={14} />
+      <span>Sweep Floor</span>
+      <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: "rgba(34,211,238,0.2)" }}>
+        {listedCount}
+      </span>
+    </button>
+  );
+}
+
 // ─── Main CollectionPage ──────────────────────────────────────────────────────
 export default function CollectionPage() {
   const { id } = useParams();
 
-  // ✅ Stats hooks — UNTOUCHED
+  // Stats hooks
   const { collection, isLoading: colLoading } = useCollection(id);
   const { stats: rpcStats } = useCollectionStats(collection?.contract_address || "");
   const { listings } = useRealtimeListings(collection?.contract_address);
@@ -149,10 +206,11 @@ export default function CollectionPage() {
   const [page,           setPage]           = useState(1);
   const [hasMore,        setHasMore]        = useState(true);
   const [tab,            setTab]            = useState("Items");
-  const [buyModal,       setBuyModal]       = useState(null); // listing object
+  const [buyModal,       setBuyModal]       = useState(null);
+  const [sweepModal,     setSweepModal]     = useState(false);
   const loaderRef = useRef(null);
 
-  // ✅ Stats — UNTOUCHED
+  // Stats calculation
   const stats = useMemo(() => {
     const supply     = rpcStats.totalSupply  || collection?.total_supply || 0;
     const floorPrice = rpcStats.floorPrice   || collection?.floor_price  || 0;
@@ -161,11 +219,11 @@ export default function CollectionPage() {
     const royaltyBps = collection?.royalty_bps ?? 0;
 
     return {
-      floor:     floorPrice > 0 ? `${Number(floorPrice).toFixed(2)} USD` : "—",
-      topOffer:  collection?.top_offer ? `${Number(collection.top_offer).toFixed(2)} USD` : "—",
-      vol24h:    collection?.volume_24h    ? `${Number(collection.volume_24h).toFixed(2)} USD`    : "0 USD",
-      totalVol:  collection?.volume_total  ? `${Number(collection.volume_total).toFixed(2)} USD`  : "0 USD",
-      mktCap:    floorPrice && supply ? `${(Number(floorPrice) * supply).toLocaleString()} USD` : "—",
+      floor:     floorPrice > 0 ? `${(Number(floorPrice) / 1e6).toFixed(2)} USD` : "—",
+      topOffer:  collection?.top_offer ? `${(Number(collection.top_offer) / 1e6).toFixed(2)} USD` : "—",
+      vol24h:    collection?.volume_24h    ? `${(Number(collection.volume_24h) / 1e6).toFixed(2)} USD`    : "0 USD",
+      totalVol:  collection?.volume_total  ? `${(Number(collection.volume_total) / 1e6).toFixed(2)} USD`  : "0 USD",
+      mktCap:    floorPrice && supply ? `${((Number(floorPrice) / 1e6) * supply).toLocaleString()} USD` : "—",
       owners,
       ownerPct:  supply && owners ? `${((owners / supply) * 100).toFixed(1)}%` : "0%",
       listed,
@@ -175,7 +233,7 @@ export default function CollectionPage() {
     };
   }, [collection, activeListings, rpcStats]);
 
-  // ✅ Fetch unlisted tokens — UNTOUCHED
+  // Fetch unlisted tokens
   const fetchPage = useCallback(async (pageNum) => {
     if (!collection?.metadata_base_uri) return;
     let base = collection.metadata_base_uri;
@@ -220,6 +278,15 @@ export default function CollectionPage() {
     observer.observe(loaderRef.current);
     return () => observer.disconnect();
   }, [hasMore, tokensLoading, tab]);
+
+  // Handle sweep action
+  const handleSweep = () => {
+    // For now, just buy the floor item
+    // In future: implement multi-select and batch purchase
+    if (activeListings.length > 0) {
+      setBuyModal(activeListings[0]);
+    }
+  };
 
   if (colLoading) return (
     <div className="flex items-center justify-center min-h-[60vh]">
@@ -279,7 +346,7 @@ export default function CollectionPage() {
           </div>
         </div>
 
-        {/* ✅ Stats Grid — UNTOUCHED */}
+        {/* Stats Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
           <StatItem label="Floor Price" value={stats.floor}    subValue={null} />
           <StatItem label="Top Offer"   value={stats.topOffer} />
@@ -292,122 +359,62 @@ export default function CollectionPage() {
           <StatItem label="Royalties"   value={stats.royalties} />
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-6 border-b mb-6" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-          {TABS.map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className="pb-4 text-sm font-bold uppercase tracking-widest transition-all"
-              style={{
-                background: "none", border: "none",
-                borderBottom: tab === t ? "2px solid #22d3ee" : "2px solid transparent",
-                color: tab === t ? "#22d3ee" : "#9da7b3",
-                cursor: "pointer",
-              }}>
-              {t}
-            </button>
-          ))}
+        {/* Tabs + Actions Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b mb-6" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+          <div className="flex gap-6">
+            {TABS.map(t => (
+              <button key={t} onClick={() => setTab(t)}
+                className="pb-4 text-sm font-bold uppercase tracking-widest transition-all"
+                style={{
+                  background: "none", border: "none",
+                  borderBottom: tab === t ? "2px solid #22d3ee" : "2px solid transparent",
+                  color: tab === t ? "#22d3ee" : "#9da7b3",
+                  cursor: "pointer",
+                }}>
+                {t}
+              </button>
+            ))}
+          </div>
+          
+          {/* Sweep Button - only show on Items tab with listings */}
+          {tab === "Items" && activeListings.length > 0 && (
+            <div className="pb-3 sm:pb-0">
+              <SweepButton listings={activeListings} onSweep={handleSweep} />
+            </div>
+          )}
         </div>
 
         {/* Items Tab */}
         {tab === "Items" && (
           <>
-            {/* CSS for group-hover animated buy button */}
-            <style>{`
-              .nft-card:hover .buy-slide {
-                transform: translateY(0) !important;
-              }
-            `}</style>
-
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-              {/* Listed NFTs — hoisted to top */}
-              {activeListings.map(listing => (
-                <div
+              {/* Listed NFTs - hoisted to top, sorted by price (cheapest first) */}
+              {activeListings.map((listing, index) => (
+                <NFTGridCard
                   key={`listed-${listing.token_id}`}
-                  className="nft-card group rounded-2xl overflow-hidden cursor-pointer relative"
-                  style={{
-                    background: "#121821",
-                    border: "1px solid rgba(34,211,238,0.2)",
-                    transition: "border-color 0.2s, transform 0.2s, box-shadow 0.2s",
+                  token={{
+                    tokenId: listing.token_id,
+                    token_id: listing.token_id,
+                    name: listing.name,
+                    image: listing.image || listing.image_url
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(34,211,238,0.5)"; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(34,211,238,0.08)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(34,211,238,0.2)"; e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "none"; }}
-                  onClick={() => window.location.href = `/collection/${id}/${listing.token_id}`}
-                >
-                  <div className="relative aspect-square overflow-hidden" style={{ background: "#161d28" }}>
-                    <img
-                      src={listing.image || listing.image_url || ""}
-                      alt={listing.name}
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      onError={e => { e.target.style.display = "none"; }}
-                    />
-                    <div className="absolute top-2 left-2 text-[9px] font-bold px-2 py-0.5 rounded-lg"
-                      style={{ background: "rgba(11,15,20,0.85)", color: "#22d3ee",
-                        border: "1px solid rgba(34,211,238,0.4)", backdropFilter: "blur(4px)" }}>
-                      ● FOR SALE
-                    </div>
-                    {/* Animated Buy Now slide-up */}
-                    <button
-                      className="buy-slide absolute bottom-0 left-0 right-0 flex items-center justify-center gap-1.5 py-3 font-bold text-xs"
-                      style={{
-                        background: "linear-gradient(to top, rgba(34,211,238,0.97), rgba(34,211,238,0.88))",
-                        color: "#0b0f14",
-                        transform: "translateY(100%)",
-                        transition: "transform 0.25s cubic-bezier(0.4,0,0.2,1)",
-                        border: "none", cursor: "pointer",
-                        fontFamily: "Syne, sans-serif",
-                      }}
-                      onClick={e => { e.stopPropagation(); setBuyModal(listing); }}
-                    >
-                      <ShoppingCart size={13} /> Buy Now
-                    </button>
-                  </div>
-                  <div className="p-3">
-                    <div className="text-[9px] font-bold uppercase tracking-widest mb-0.5 truncate"
-                      style={{ color: "#9da7b3" }}>{collection?.name}</div>
-                    <div className="text-sm font-bold truncate" style={{ color: "#e6edf3" }}>
-                      {listing.name || `${collection?.name} #${listing.token_id}`}
-                    </div>
-                    <div className="mt-1.5">
-                      <div className="text-[9px] uppercase tracking-wide" style={{ color: "#9da7b3" }}>Price</div>
-                      <div className="font-mono text-sm font-bold" style={{ color: "#22d3ee" }}>
-                        {(Number(listing.price) / 1e6).toFixed(2)} USD
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                  collectionName={collection?.name}
+                  slug={id}
+                  listing={listing}
+                  rank={index < 3 ? index + 1 : null} // Top 3 get rank badges
+                />
               ))}
 
               {/* Unlisted tokens */}
               {unlistedTokens.map(token => (
-                <div
+                <NFTGridCard
                   key={`unlisted-${token.tokenId}`}
-                  className="group rounded-2xl overflow-hidden cursor-pointer"
-                  style={{
-                    background: "#121821",
-                    border: "1px solid rgba(255,255,255,0.05)",
-                    transition: "border-color 0.2s, transform 0.2s",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.05)"; e.currentTarget.style.transform = "translateY(0)"; }}
-                  onClick={() => window.location.href = `/collection/${id}/${token.tokenId}`}
-                >
-                  <div className="aspect-square overflow-hidden" style={{ background: "#161d28" }}>
-                    <img
-                      src={token.image || ""}
-                      alt={token.name}
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      onError={e => { e.target.style.display = "none"; }}
-                    />
-                  </div>
-                  <div className="p-3">
-                    <div className="text-[9px] font-bold uppercase tracking-widest mb-0.5 truncate"
-                      style={{ color: "#9da7b3" }}>{collection?.name}</div>
-                    <div className="text-sm font-bold truncate" style={{ color: "#e6edf3" }}>{token.name}</div>
-                    <div className="mt-1.5 text-[10px]" style={{ color: "rgba(157,167,179,0.35)" }}>
-                      Not listed
-                    </div>
-                  </div>
-                </div>
+                  token={token}
+                  collectionName={collection?.name}
+                  slug={id}
+                  listing={null}
+                  rank={null}
+                />
               ))}
 
               {tokensLoading && Array(10).fill(0).map((_, i) => <CardSkeleton key={`sk-${i}`} />)}
@@ -433,7 +440,7 @@ export default function CollectionPage() {
         )}
       </div>
 
-      {/* Buy Modal — uses the standalone BuyModal component */}
+      {/* Buy Modal */}
       {buyModal && (
         <BuyModal
           listing={buyModal}
