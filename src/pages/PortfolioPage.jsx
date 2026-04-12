@@ -11,9 +11,10 @@ import DelistModal from "@/components/DelistModal.jsx";
 
 const TABS = ["All", "Listed", "Unlisted"];
 
-// ✅ Always divide raw 6-decimal units by 1e6 for display
-function fmtPrice(rawPrice) {
-  return (Number(rawPrice) / 1e6).toFixed(2);
+// price in DB = raw 6-decimal units → always ÷1e6 for display
+function fmtPrice(raw) {
+  if (!raw) return "0.00";
+  return (Number(raw) / 1e6).toFixed(2);
 }
 
 // ─── NFT Card ─────────────────────────────────────────────────────────────────
@@ -35,11 +36,13 @@ function NFTCard({ nft, view, onList, onDelist }) {
         style={{ background: "#121821", border: isListed ? "1px solid rgba(34,211,238,0.25)" : "1px solid rgba(255,255,255,0.06)" }}
         onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(34,211,238,0.4)"}
         onMouseLeave={e => e.currentTarget.style.borderColor = isListed ? "rgba(34,211,238,0.25)" : "rgba(255,255,255,0.06)"}>
+
         <div className="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden" style={{ background: "#161d28" }}>
           {imgSrc
             ? <img src={imgSrc} alt={tokenName} className="w-full h-full object-cover" />
             : <div className="w-full h-full animate-pulse" style={{ background: "#1a2232" }} />}
         </div>
+
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
             <div className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#22d3ee" }}>
@@ -59,6 +62,7 @@ function NFTCard({ nft, view, onList, onDelist }) {
             </div>
           )}
         </div>
+
         {isListed ? (
           <button onClick={e => { e.stopPropagation(); onDelist(nft); }}
             className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 flex-shrink-0"
@@ -82,23 +86,27 @@ function NFTCard({ nft, view, onList, onDelist }) {
       style={{ background: "#121821", border: isListed ? "1px solid rgba(34,211,238,0.25)" : "1px solid rgba(255,255,255,0.06)" }}
       onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(34,211,238,0.4)"}
       onMouseLeave={e => e.currentTarget.style.borderColor = isListed ? "rgba(34,211,238,0.25)" : "rgba(255,255,255,0.06)"}>
+
       {isListed && (
         <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded-lg text-[9px] font-bold"
           style={{ background: "rgba(11,15,20,0.85)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.4)", backdropFilter: "blur(4px)" }}>
           ● LISTED
         </div>
       )}
+
       <div className="aspect-square overflow-hidden" style={{ background: "#161d28" }}>
         {imgSrc
           ? <img src={imgSrc} alt={tokenName}
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
           : <div className="w-full h-full animate-pulse" style={{ background: "#1a2232" }} />}
       </div>
+
       <div className="p-3">
         <div className="text-[9px] font-bold uppercase tracking-widest mb-1 truncate" style={{ color: "#9da7b3" }}>
           {nft.collection_name}
         </div>
         <div className="font-bold text-sm truncate mb-1" style={{ color: "#e6edf3" }}>{tokenName}</div>
+
         {isListed ? (
           <div className="flex items-center justify-between">
             <span className="font-mono text-sm font-bold" style={{ color: "#22d3ee" }}>
@@ -125,7 +133,7 @@ function NFTCard({ nft, view, onList, onDelist }) {
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 export default function PortfolioPage() {
   const { address, isConnected } = useAccount();
   const [ownedNFTs,   setOwnedNFTs]   = useState([]);
@@ -137,7 +145,6 @@ export default function PortfolioPage() {
   const [tab,         setTab]         = useState("All");
   const [listModal,   setListModal]   = useState(null);
   const [delistModal, setDelistModal] = useState(null);
-  const realtimeRef = useRef(null);
 
   const fetchPortfolio = useCallback(async () => {
     if (!address) return;
@@ -145,7 +152,7 @@ export default function PortfolioPage() {
     setError(null);
 
     try {
-      // ✅ ilike = case-insensitive — critical for checksummed addresses
+      // 1. NFTs owned by this wallet — ilike for case-insensitive
       const { data: nftRows, error: nftErr } = await supabase
         .from("nfts")
         .select("token_id, contract_address, name, image, metadata_url")
@@ -156,38 +163,46 @@ export default function PortfolioPage() {
       if (nftErr) throw nftErr;
       if (!nftRows?.length) { setOwnedNFTs([]); setLoading(false); return; }
 
-      const contracts = [...new Set(nftRows.map(n => n.contract_address))];
+      // 2. Collection info — query with lowercase to match however it's stored
+      const contracts = [...new Set(nftRows.map(n => n.contract_address.toLowerCase()))];
       const { data: colRows } = await supabase
         .from("collections")
-        .select("contract_address, name, slug, metadata_base_uri")
-        .in("contract_address", contracts);
-
+        .select("contract_address, name, slug, metadata_base_uri");
+      // Build map with lowercase keys regardless of how DB stores it
       const colMap = {};
-      (colRows || []).forEach(c => { colMap[c.contract_address?.toLowerCase()] = c; });
+      (colRows || []).forEach(c => {
+        colMap[c.contract_address?.toLowerCase()] = c;
+      });
 
-      // ✅ ilike on seller too — handles checksummed vs lowercase
-      const { data: listingRows } = await supabase
+      // 3. Active listings by this seller — ilike on seller AND contract
+      // ✅ KEY FIX: don't filter by nft_contract here — get all and match client-side
+      const { data: listingRows, error: listErr } = await supabase
         .from("listings")
-        .select("token_id, nft_contract, listing_id, price")
+        .select("token_id, nft_contract, listing_id, price, active")
         .ilike("seller", address)
         .eq("active", true);
 
-      // ✅ Deduplicate — keep only the most recent (highest listing_id) per token
+      if (listErr) console.warn("Listings fetch error:", listErr);
+
+      // Build listing map: lowercase(contract):tokenId → listing
+      // Deduplicate: keep highest listing_id (most recent) per token
       const listingMap = {};
       (listingRows || [])
-        .sort((a, b) => b.listing_id - a.listing_id) // newest first
+        .sort((a, b) => Number(b.listing_id) - Number(a.listing_id))
         .forEach(l => {
-          const key = `${l.nft_contract?.toLowerCase()}:${l.token_id}`;
-          if (!listingMap[key]) listingMap[key] = l; // keep newest only
+          const key = `${l.nft_contract?.toLowerCase()}:${Number(l.token_id)}`;
+          if (!listingMap[key]) listingMap[key] = l;
         });
 
+      // 4. Merge everything
       const enriched = nftRows.map(nft => {
-        const col = colMap[nft.contract_address?.toLowerCase()];
-        const key = `${nft.contract_address?.toLowerCase()}:${nft.token_id}`;
+        const contractLower = nft.contract_address?.toLowerCase();
+        const col = colMap[contractLower];
+        const key = `${contractLower}:${Number(nft.token_id)}`;
         return {
           ...nft,
-          collection_name:   col?.name || nft.contract_address?.slice(0, 8),
-          collection_slug:   col?.slug,
+          collection_name:   col?.name || contractLower?.slice(0, 8),
+          collection_slug:   col?.slug || null,
           metadata_base_uri: col?.metadata_base_uri || null,
           listing:           listingMap[key] || null,
           metadata:          null,
@@ -197,19 +212,20 @@ export default function PortfolioPage() {
       setOwnedNFTs(enriched);
       setLoading(false);
 
-      // Stream metadata for NFTs missing images
+      // 5. Stream metadata for NFTs without images
       const needsMeta = enriched.filter(n => !n.image && n.metadata_base_uri);
       if (!needsMeta.length) return;
 
       setMetaLoading(true);
       const working = [...enriched];
-      const BATCH = 8;
-
-      for (let i = 0; i < needsMeta.length; i += BATCH) {
-        await Promise.all(needsMeta.slice(i, i + BATCH).map(async (nft) => {
+      for (let i = 0; i < needsMeta.length; i += 8) {
+        await Promise.all(needsMeta.slice(i, i + 8).map(async nft => {
           try {
             const meta = await fetchTokenMetadata(nft.token_id, nft.metadata_base_uri);
-            const idx  = working.findIndex(n => n.contract_address === nft.contract_address && n.token_id === nft.token_id);
+            const idx  = working.findIndex(n =>
+              n.contract_address?.toLowerCase() === nft.contract_address?.toLowerCase() &&
+              Number(n.token_id) === Number(nft.token_id)
+            );
             if (idx !== -1) working[idx] = { ...working[idx], metadata: meta };
           } catch {}
         }));
@@ -218,34 +234,37 @@ export default function PortfolioPage() {
       setMetaLoading(false);
 
     } catch (e) {
+      console.error("fetchPortfolio:", e);
       setError(e.message);
       setLoading(false);
       setMetaLoading(false);
     }
   }, [address]);
 
-  // Initial load
   useEffect(() => {
     if (isConnected && address) fetchPortfolio();
   }, [address, isConnected, fetchPortfolio]);
 
-  // ✅ Realtime subscription — updates listing state instantly on any DB change
+  // ✅ Realtime — any change to listings table triggers a portfolio refresh
   useEffect(() => {
     if (!address) return;
 
     const channel = supabase
-      .channel(`portfolio-listings-${address}`)
+      .channel(`portfolio:${address.toLowerCase()}`)
       .on("postgres_changes", {
         event: "*",
         schema: "public",
         table: "listings",
-      }, () => {
-        // Re-fetch listings portion only (fast — no metadata reload)
-        fetchPortfolio();
+      }, (payload) => {
+        // Only react if this is our seller address
+        const row = (payload.new || payload.old) as any;
+        if (!row?.seller) { fetchPortfolio(); return; }
+        if (row.seller?.toLowerCase() === address?.toLowerCase()) {
+          fetchPortfolio();
+        }
       })
       .subscribe();
 
-    realtimeRef.current = channel;
     return () => { supabase.removeChannel(channel); };
   }, [address, fetchPortfolio]);
 
@@ -296,15 +315,12 @@ export default function PortfolioPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Refresh — spins while loading */}
-          <button onClick={fetchPortfolio} disabled={loading}
-            title="Refresh"
+          <button onClick={fetchPortfolio} disabled={loading} title="Refresh"
             className="h-10 w-10 rounded-xl flex items-center justify-center"
             style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
             <RefreshCw size={14} className={loading || metaLoading ? "animate-spin" : ""} style={{ color: "#9da7b3" }} />
           </button>
 
-          {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" size={13} style={{ color: "#9da7b3" }} />
             <input type="text" placeholder="Search by name or ID..."
@@ -315,17 +331,13 @@ export default function PortfolioPage() {
               onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.06)"} />
           </div>
 
-          {/* View toggle */}
           <div className="flex rounded-xl overflow-hidden"
             style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)" }}>
             {[{ v: "grid", Icon: LayoutGrid }, { v: "list", Icon: List }].map(({ v, Icon }) => (
               <button key={v} onClick={() => setView(v)}
                 className="flex items-center justify-center w-10 h-10 transition-all"
-                style={{
-                  background: view === v ? "rgba(34,211,238,0.1)" : "transparent",
-                  color:      view === v ? "#22d3ee" : "#9da7b3",
-                  border: "none", cursor: "pointer",
-                }}>
+                style={{ background: view === v ? "rgba(34,211,238,0.1)" : "transparent",
+                  color: view === v ? "#22d3ee" : "#9da7b3", border: "none", cursor: "pointer" }}>
                 <Icon size={15} />
               </button>
             ))}
@@ -372,14 +384,11 @@ export default function PortfolioPage() {
               <RefreshCw size={11} className="animate-spin" /> Loading images...
             </span>
           )}
-        </div>
-      )}
-
-      {/* Sync status hint */}
-      {!loading && (
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: "#22d3ee" }} />
-          <span className="text-[10px]" style={{ color: "#9da7b3" }}>Live sync active — updates automatically</span>
+          {/* Live indicator */}
+          <div className="ml-auto flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "#22d3ee" }} />
+            <span className="text-[10px]" style={{ color: "#9da7b3" }}>Live</span>
+          </div>
         </div>
       )}
 
@@ -415,7 +424,7 @@ export default function PortfolioPage() {
                 listingId:  nft.listing.listing_id,
                 name:       nft.metadata?.name  || nft.name  || `#${nft.token_id}`,
                 image:      nft.metadata?.image || nft.image || null,
-                price:      nft.listing.price,  // raw — DelistModal shows fmtPrice
+                price:      nft.listing.price,
                 collection: nft.collection_name,
               })}
             />
