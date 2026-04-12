@@ -6,6 +6,7 @@ import {
   ShoppingCart, BarChart2, RefreshCw
 } from "lucide-react";
 import { useCollection, useRealtimeListings, useCollectionStats } from "@/hooks/useSupabase";
+import { supabase } from "@/lib/supabase";
 import NFTImage from "@/components/NFTImage.jsx";
 import { CardSkeleton } from "@/components/Skeleton.jsx";
 import { extractImageUrl } from "@/utils/nftImageUtils.js";
@@ -38,41 +39,51 @@ const StatItem = ({ label, value, subValue, isTrend }) => (
 );
 
 // ─── View Toggle + Refresh — all in ONE pill ──────────────────────────────────
-// Single (1 col) | Grid (2 col) | List | | Refresh
-function ViewControls({ current, onChange, onRefresh, refreshing }) {
+function ViewControls({ current, onChange, onRefresh, refreshing, liveFlash }) {
   const views = [
-    { id: VIEW.SINGLE, Icon: Square,   title: "Single view" },
-    { id: VIEW.GRID,   Icon: Grid2X2,  title: "Grid view"   },
-    { id: VIEW.LIST,   Icon: List,     title: "List view"   },
+    { id: VIEW.SINGLE, Icon: Square,  title: "Single view" },
+    { id: VIEW.GRID,   Icon: Grid2X2, title: "Grid view"   },
+    { id: VIEW.LIST,   Icon: List,    title: "List view"   },
   ];
 
   return (
-    <div className="flex items-center rounded-xl overflow-hidden"
-      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+    <div className="flex items-center gap-3">
 
-      {/* View mode buttons */}
-      {views.map(({ id, Icon, title }, i) => (
-        <button key={id} onClick={() => onChange(id)} title={title}
-          className="flex items-center justify-center w-9 h-9 transition-all"
+      {/* Live indicator */}
+      <div className="flex items-center gap-1.5">
+        <div className="w-2 h-2 rounded-full animate-pulse"
           style={{
-            background:  current === id ? "rgba(0,230,168,0.15)" : "transparent",
-            color:       current === id ? "#00E6A8" : "#6B7280",
-            border: "none",
-            borderRight: "1px solid rgba(255,255,255,0.06)",
-            cursor: "pointer",
-          }}>
-          <Icon size={15} />
-        </button>
-      ))}
+            background: liveFlash ? "#22C55E" : "#00E6A8",
+            boxShadow: liveFlash ? "0 0 8px #22C55E" : "0 0 4px rgba(0,230,168,0.4)",
+            transition: "all 0.3s",
+          }} />
+        <span className="text-[10px] font-medium" style={{ color: "#9CA3AF" }}>Live</span>
+      </div>
 
-      {/* Divider then Refresh */}
-      <button onClick={onRefresh} title="Refresh listings"
-        className="flex items-center justify-center w-9 h-9 transition-all"
-        style={{ background: "transparent", color: "#6B7280", border: "none", cursor: "pointer" }}
-        onMouseEnter={e => { e.currentTarget.style.color = "#00E6A8"; }}
-        onMouseLeave={e => { e.currentTarget.style.color = "#6B7280"; }}>
-        <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
-      </button>
+      {/* Single pill: [Single | Grid | List | Refresh] */}
+      <div className="flex items-center rounded-xl overflow-hidden"
+        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        {views.map(({ id, Icon, title }) => (
+          <button key={id} onClick={() => onChange(id)} title={title}
+            className="flex items-center justify-center w-9 h-9 transition-all"
+            style={{
+              background:  current === id ? "rgba(0,230,168,0.15)" : "transparent",
+              color:       current === id ? "#00E6A8" : "#6B7280",
+              border: "none",
+              borderRight: "1px solid rgba(255,255,255,0.06)",
+              cursor: "pointer",
+            }}>
+            <Icon size={15} />
+          </button>
+        ))}
+        <button onClick={onRefresh} title="Refresh listings"
+          className="flex items-center justify-center w-9 h-9 transition-all"
+          style={{ background: "transparent", color: "#6B7280", border: "none", cursor: "pointer" }}
+          onMouseEnter={e => { e.currentTarget.style.color = "#00E6A8"; }}
+          onMouseLeave={e => { e.currentTarget.style.color = "#6B7280"; }}>
+          <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -87,7 +98,6 @@ function NFTCard({ token, collectionName, slug, listing, viewMode, onBuy }) {
 
   function goToItem() { navigate(`/collection/${slug}/${tokenId}`); }
 
-  // ── List row ──────────────────────────────────────────────────────────────
   if (viewMode === VIEW.LIST) {
     return (
       <div onClick={goToItem}
@@ -118,25 +128,12 @@ function NFTCard({ token, collectionName, slug, listing, viewMode, onBuy }) {
     );
   }
 
-  // ── Grid card (SINGLE = 1 col, GRID = 2 col) ──────────────────────────────
   return (
     <div
       className="nft-card group rounded-2xl overflow-hidden cursor-pointer relative"
-      style={{
-        background: "#11161D",
-        border: isListed ? "1px solid rgba(0,230,168,0.2)" : "1px solid rgba(255,255,255,0.05)",
-        transition: "all 0.2s ease",
-      }}
-      onMouseEnter={e => {
-        e.currentTarget.style.borderColor = isListed ? "rgba(0,230,168,0.5)" : "rgba(255,255,255,0.12)";
-        e.currentTarget.style.transform   = "translateY(-3px)";
-        e.currentTarget.style.boxShadow   = isListed ? "0 12px 32px rgba(0,230,168,0.1)" : "0 8px 24px rgba(0,0,0,0.3)";
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.borderColor = isListed ? "rgba(0,230,168,0.2)" : "rgba(255,255,255,0.05)";
-        e.currentTarget.style.transform   = "translateY(0)";
-        e.currentTarget.style.boxShadow   = "none";
-      }}
+      style={{ background: "#11161D", border: isListed ? "1px solid rgba(0,230,168,0.2)" : "1px solid rgba(255,255,255,0.05)", transition: "all 0.2s ease" }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = isListed ? "rgba(0,230,168,0.5)" : "rgba(255,255,255,0.12)"; e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = isListed ? "0 12px 32px rgba(0,230,168,0.1)" : "0 8px 24px rgba(0,0,0,0.3)"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = isListed ? "rgba(0,230,168,0.2)" : "rgba(255,255,255,0.05)"; e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "none"; }}
       onClick={goToItem}>
 
       <div className="relative aspect-square overflow-hidden" style={{ background: "#161d28" }}>
@@ -151,22 +148,15 @@ function NFTCard({ token, collectionName, slug, listing, viewMode, onBuy }) {
 
         {isListed && (
           <div className="absolute top-2 left-2 text-[9px] font-bold px-2 py-1 rounded-lg"
-            style={{ background: "rgba(10,15,20,0.9)", color: "#00E6A8",
-              border: "1px solid rgba(0,230,168,0.4)", backdropFilter: "blur(4px)" }}>
+            style={{ background: "rgba(10,15,20,0.9)", color: "#00E6A8", border: "1px solid rgba(0,230,168,0.4)", backdropFilter: "blur(4px)" }}>
             ● FOR SALE
           </div>
         )}
 
-        {/* Animated Buy Now slides up on hover */}
         {isListed && onBuy && (
           <button
             className="buy-slide absolute bottom-0 left-0 right-0 flex items-center justify-center gap-1.5 py-3 font-bold text-xs"
-            style={{
-              background: "linear-gradient(to top, rgba(0,230,168,0.97), rgba(0,230,168,0.88))",
-              color: "#0A0F14", transform: "translateY(100%)",
-              transition: "transform 0.25s cubic-bezier(0.4,0,0.2,1)",
-              border: "none", cursor: "pointer",
-            }}
+            style={{ background: "linear-gradient(to top, rgba(0,230,168,0.97), rgba(0,230,168,0.88))", color: "#0A0F14", transform: "translateY(100%)", transition: "transform 0.25s cubic-bezier(0.4,0,0.2,1)", border: "none", cursor: "pointer" }}
             onClick={e => { e.stopPropagation(); onBuy(listing); }}>
             <ShoppingCart size={13} /> Buy Now
           </button>
@@ -174,9 +164,7 @@ function NFTCard({ token, collectionName, slug, listing, viewMode, onBuy }) {
       </div>
 
       <div className="p-3">
-        <div className="text-[9px] font-medium uppercase tracking-widest mb-0.5 truncate" style={{ color: "#9CA3AF" }}>
-          {collectionName}
-        </div>
+        <div className="text-[9px] font-medium uppercase tracking-widest mb-0.5 truncate" style={{ color: "#9CA3AF" }}>{collectionName}</div>
         <div className="text-sm font-bold truncate mb-1.5" style={{ color: "#EDEDED" }}>
           {token.name || `${collectionName} #${tokenId}`}
         </div>
@@ -209,12 +197,7 @@ function FloorBar({ activeListings, visible, onBuyFloor }) {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-40 transition-transform duration-300"
-      style={{
-        background: "rgba(10,15,20,0.95)", backdropFilter: "blur(12px)",
-        borderTop: "1px solid rgba(0,230,168,0.15)",
-        paddingBottom: "env(safe-area-inset-bottom)",
-        transform: visible ? "translateY(0)" : "translateY(100%)",
-      }}>
+      style={{ background: "rgba(10,15,20,0.95)", backdropFilter: "blur(12px)", borderTop: "1px solid rgba(0,230,168,0.15)", paddingBottom: "env(safe-area-inset-bottom)", transform: visible ? "translateY(0)" : "translateY(100%)" }}>
       <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-5">
           <div>
@@ -249,6 +232,7 @@ export default function CollectionPage() {
   const [buyModal,     setBuyModal]     = useState(null);
   const [showFloorBar, setShowFloorBar] = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
+  const [liveFlash,    setLiveFlash]    = useState(false);
   const lastScrollY = useRef(0);
 
   const { collection, isLoading: colLoading } = useCollection(id);
@@ -270,6 +254,26 @@ export default function CollectionPage() {
   const [page,           setPage]           = useState(1);
   const [hasMore,        setHasMore]        = useState(true);
   const loaderRef = useRef(null);
+
+  // ✅ Realtime subscription for collection page — flash live dot on changes
+  useEffect(() => {
+    if (!contractAddr) return;
+
+    const channel = supabase
+      .channel(`collection-listings:${contractAddr}`)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "listings",
+        filter: `nft_contract=eq.${contractAddr}`,
+      }, () => {
+        setLiveFlash(true);
+        setTimeout(() => setLiveFlash(false), 1500);
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [contractAddr]);
 
   useEffect(() => {
     function onScroll() {
@@ -310,29 +314,21 @@ export default function CollectionPage() {
     return base;
   }, [collection?.metadata_base_uri]);
 
-  // ✅ Fetch IPFS images for listed tokens so they show in the grid
   useEffect(() => {
     if (!ipfsBase || !activeListings.length) { setListedTokensWithImages([]); return; }
     let cancelled = false;
-
     Promise.all(activeListings.map(async listing => {
       if (listing.image || listing.image_url) {
-        return { tokenId: String(listing.token_id), token_id: listing.token_id,
-          name: listing.name || `${collection?.name} #${listing.token_id}`,
-          image: listing.image || listing.image_url };
+        return { tokenId: String(listing.token_id), token_id: listing.token_id, name: listing.name || `${collection?.name} #${listing.token_id}`, image: listing.image || listing.image_url };
       }
       try {
         const res  = await fetch(`${ipfsBase}${listing.token_id}.json`, { cache: "force-cache" });
         const json = await res.json();
-        return { tokenId: String(listing.token_id), token_id: listing.token_id,
-          name: json.name || `${collection?.name} #${listing.token_id}`,
-          image: extractImageUrl(json) };
+        return { tokenId: String(listing.token_id), token_id: listing.token_id, name: json.name || `${collection?.name} #${listing.token_id}`, image: extractImageUrl(json) };
       } catch {
-        return { tokenId: String(listing.token_id), token_id: listing.token_id,
-          name: listing.name || `${collection?.name} #${listing.token_id}`, image: "" };
+        return { tokenId: String(listing.token_id), token_id: listing.token_id, name: listing.name || `${collection?.name} #${listing.token_id}`, image: "" };
       }
     })).then(results => { if (!cancelled) setListedTokensWithImages(results); });
-
     return () => { cancelled = true; };
   }, [activeListings, ipfsBase, collection?.name]);
 
@@ -364,7 +360,6 @@ export default function CollectionPage() {
     if (ipfsBase) { setUnlistedTokens([]); setPage(1); setHasMore(true); fetchPage(1); }
   }, [ipfsBase, fetchPage]);
 
-  // Re-fetch when listing count changes (new listing appeared)
   const listedCount = listedIds.size;
   useEffect(() => {
     if (ipfsBase && listedCount >= 0) { setUnlistedTokens([]); setPage(1); setHasMore(true); fetchPage(1); }
@@ -381,7 +376,6 @@ export default function CollectionPage() {
     return () => obs.disconnect();
   }, [hasMore, tokensLoading, tab]);
 
-  // Manual refresh
   async function handleRefresh() {
     setRefreshing(true);
     setUnlistedTokens([]);
@@ -392,7 +386,6 @@ export default function CollectionPage() {
     setRefreshing(false);
   }
 
-  // Grid layout based on view mode
   const gridClass = useMemo(() => {
     if (viewMode === VIEW.LIST)   return "flex flex-col gap-2";
     if (viewMode === VIEW.SINGLE) return "grid grid-cols-1 sm:grid-cols-1 gap-4 max-w-sm mx-auto";
@@ -422,7 +415,7 @@ export default function CollectionPage() {
 
         <div className="px-4 sm:px-6 max-w-7xl mx-auto -mt-16 relative z-10">
 
-          {/* ─── Collection Header ─────────────────────────────────────────────── */}
+          {/* Collection Header */}
           <div className="flex flex-col md:flex-row md:items-end gap-5 mb-8">
             <div className="w-28 h-28 rounded-3xl overflow-hidden flex-shrink-0"
               style={{ border: "4px solid #0A0F14", background: "#11161D" }}>
@@ -437,55 +430,38 @@ export default function CollectionPage() {
                 {collection?.verified && <CheckCircle2 size={22} style={{ color: "#00E6A8" }} />}
               </div>
 
-              {/* ✅ Creator + all socials from Supabase */}
               <div className="flex items-center flex-wrap gap-x-4 gap-y-1 mb-2">
                 <span className="text-sm font-medium" style={{ color: "#00E6A8" }}>
                   By {collection?.creator_name || "Tempo Creator"}
                 </span>
-
                 <div className="flex items-center gap-3" style={{ color: "#9CA3AF" }}>
-                  {/* X / Twitter */}
                   {collection?.twitter_url && (
-                    <a href={collection.twitter_url} target="_blank" rel="noreferrer"
-                      title="X (Twitter)"
+                    <a href={collection.twitter_url} target="_blank" rel="noreferrer" title="X (Twitter)"
                       className="flex items-center gap-1 text-xs hover:text-white transition-colors">
-                      <Twitter size={15} />
-                      <span className="hidden sm:inline">X</span>
+                      <Twitter size={15} /><span className="hidden sm:inline">X</span>
                     </a>
                   )}
-                  {/* Discord */}
                   {collection?.discord_url && (
-                    <a href={collection.discord_url} target="_blank" rel="noreferrer"
-                      title="Discord"
+                    <a href={collection.discord_url} target="_blank" rel="noreferrer" title="Discord"
                       className="flex items-center gap-1 text-xs hover:text-white transition-colors">
-                      <MessageCircle size={15} />
-                      <span className="hidden sm:inline">Discord</span>
+                      <MessageCircle size={15} /><span className="hidden sm:inline">Discord</span>
                     </a>
                   )}
-                  {/* Website */}
                   {collection?.website_url && (
-                    <a href={collection.website_url} target="_blank" rel="noreferrer"
-                      title="Website"
+                    <a href={collection.website_url} target="_blank" rel="noreferrer" title="Website"
                       className="flex items-center gap-1 text-xs hover:text-white transition-colors">
-                      <Globe size={15} />
-                      <span className="hidden sm:inline">Website</span>
+                      <Globe size={15} /><span className="hidden sm:inline">Website</span>
                     </a>
                   )}
-                  {/* Tempo Explorer */}
-                  <a href={`${EXPLORER_BASE}/address/${collection?.contract_address}`}
-                    target="_blank" rel="noreferrer"
-                    title="View on Tempo Explorer"
+                  <a href={`${EXPLORER_BASE}/address/${collection?.contract_address}`} target="_blank" rel="noreferrer" title="View on Tempo Explorer"
                     className="flex items-center gap-1 text-xs hover:text-white transition-colors">
-                    <ExternalLink size={15} />
-                    <span className="hidden sm:inline">Tempo Scan</span>
+                    <ExternalLink size={15} /><span className="hidden sm:inline">Tempo Scan</span>
                   </a>
                 </div>
               </div>
 
               {collection?.description && (
-                <p className="text-sm line-clamp-2" style={{ color: "#9CA3AF" }}>
-                  {collection.description}
-                </p>
+                <p className="text-sm line-clamp-2" style={{ color: "#9CA3AF" }}>{collection.description}</p>
               )}
             </div>
           </div>
@@ -503,18 +479,14 @@ export default function CollectionPage() {
             <StatItem label="Royalties"   value={stats.royalties} />
           </div>
 
-          {/* ─── Tabs + Unified View Controls ─────────────────────────────────── */}
+          {/* Tabs + View Controls */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b mb-6"
             style={{ borderColor: "rgba(255,255,255,0.05)" }}>
             <div className="flex gap-1">
               {TABS.map(t => (
                 <button key={t} onClick={() => setTab(t)}
                   className="px-4 pb-4 text-sm font-medium uppercase tracking-widest transition-all"
-                  style={{
-                    background: "none", border: "none",
-                    borderBottom: tab === t ? "2px solid #00E6A8" : "2px solid transparent",
-                    color: tab === t ? "#00E6A8" : "#9CA3AF", cursor: "pointer",
-                  }}>
+                  style={{ background: "none", border: "none", borderBottom: tab === t ? "2px solid #00E6A8" : "2px solid transparent", color: tab === t ? "#00E6A8" : "#9CA3AF", cursor: "pointer" }}>
                   {t === "Analytics"
                     ? <span className="flex items-center gap-1.5"><BarChart2 size={13} />{t}</span>
                     : t}
@@ -522,7 +494,6 @@ export default function CollectionPage() {
               ))}
             </div>
 
-            {/* ✅ Single pill: [Single | Grid | List | Refresh] */}
             {tab === "Items" && (
               <div className="pb-3 sm:pb-1">
                 <ViewControls
@@ -530,6 +501,7 @@ export default function CollectionPage() {
                   onChange={setViewMode}
                   onRefresh={handleRefresh}
                   refreshing={refreshing}
+                  liveFlash={liveFlash}
                 />
               </div>
             )}
