@@ -257,7 +257,7 @@ export default function PortfolioPage() {
         table: "listings",
       }, (payload) => {
         // Only react if this is our seller address
-        const row = (payload.new || payload.old) as any;
+        const row = payload.new || payload.old;
         if (!row?.seller) { fetchPortfolio(); return; }
         if (row.seller?.toLowerCase() === address?.toLowerCase()) {
           fetchPortfolio();
