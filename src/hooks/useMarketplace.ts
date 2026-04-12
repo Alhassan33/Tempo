@@ -188,31 +188,40 @@ export function useMarketplace() {
 
       // Write to Supabase — store RAW units, not dollars
       try {
-        const totalRaw = await publicClient!.readContract({
-          address: network.marketplace as `0x${string}`, abi: MARKETPLACE_ABI,
-          functionName: 'totalListings',
-        }) as bigint
+        // ✅ Parse the listingId from the Listed event log — 100% reliable
+  const listedLog = receipt.logs.find((log: any) => {
+    try {
+      // The Listed event topic0
+      return log.topics[0] === 
+        '0x' + 'Listed'.padEnd(64, '0') // placeholder — use actual topic below
+    } catch { return false }
+  })
 
-        await supabase.from('listings').upsert({
-          listing_id:   Number(totalRaw) - 1,
-          seller:       account.toLowerCase(),
-          nft_contract: nftContract.toLowerCase(),
-          token_id:     Number(tokenId),
-          price:        Number(priceRaw),     // ← RAW units in DB e.g. 25000000
-          active:       true,
-          tx_hash:      h2,
-          block_number: Number(receipt.blockNumber),
-          updated_at:   new Date().toISOString(),
-        }, { onConflict: 'listing_id' })
+  // Better: decode using viem
+  const { parseEventLogs } = await import('viem')
+  const parsedLogs = parseEventLogs({
+    abi: MARKETPLACE_ABI,
+    eventName: 'Listed',
+    logs: receipt.logs,
+  })
 
-        fetchListings()
-      } catch (dbErr) { console.warn('Supabase write failed (cron will sync):', dbErr) }
+  const listingId = parsedLogs[0]?.args?.listingId
+  if (listingId === undefined) throw new Error('Could not parse listingId from logs')
 
-      status('success', 'NFT Listed Successfully!')
-    } catch (err: any) {
-      status('error', parseContractError(err))
-    } finally { setLoading(false) }
-  }, [account, wrongNetwork, network, writeContractAsync, publicClient, fetchListings])
+  await supabase.from('listings').upsert({
+    listing_id:   Number(listingId),   // ✅ from event, not totalListings
+    seller:       account.toLowerCase(),
+    nft_contract: nftContract.toLowerCase(),
+    token_id:     Number(tokenId),
+    price:        Number(priceRaw),
+    active:       true,
+    tx_hash:      h2,
+    block_number: Number(receipt.blockNumber),
+    updated_at:   new Date().toISOString(),
+  }, { onConflict: 'listing_id' })
+
+  fetchListings()
+} catch (dbErr) { console.warn('Supabase write failed (cron will sync):', dbErr) }
 
   // ─── buyNFT ────────────────────────────────────────────────────────────────
   // listing.price = raw units e.g. "25000000"
