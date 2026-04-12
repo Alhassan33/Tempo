@@ -21,44 +21,76 @@ const CANCEL_ABI = [
 /**
  * Props:
  *   nft — object with:
- *     listingId or listing_id, tokenId, name, image, collection, price, displayPrice
+ *     listingId or listing_id, tokenId, contract, name, image, collection, price, displayPrice
  *   onClose — close handler
  */
 export default function DelistModal({ nft, onClose }) {
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
   const [loading, setLoading] = useState(false);
-  const [status,  setStatus]  = useState(null); // null|success|error
+  const [status,  setStatus]  = useState(null); // null | success | error
   const [errMsg,  setErrMsg]  = useState("");
 
   if (!nft) return null;
 
-  // Handle both snake_case and camelCase for listing ID
-  const listingId = nft.listingId || nft.listing_id;
-  
-  // Price conversion: raw units -> USD display
+  // Handle both snake_case and camelCase for listing ID (fallback only)
+  const fallbackListingId = nft.listingId || nft.listing_id;
+
+  // Price display
   const displayPrice = nft.displayPrice || (Number(nft.price) / 1e6).toFixed(2);
 
   async function handleDelist() {
     setLoading(true);
     setStatus(null);
     setErrMsg("");
-    
+
     try {
+      // ✅ Always fetch the freshest active listing_id from DB before delisting.
+      // This prevents stale state from passing the wrong listing_id to the contract
+      // which causes revert #1002 ("listing not active").
+      const contractAddr = nft.contract || nft.nft_contract || "";
+      const tokenId      = nft.tokenId  || nft.token_id;
+
+      let resolvedListingId = fallbackListingId;
+
+      if (contractAddr && tokenId !== undefined) {
+        const { data: freshListing } = await supabase
+          .from("listings")
+          .select("listing_id")
+          .eq("nft_contract", contractAddr.toLowerCase())
+          .eq("token_id", Number(tokenId))
+          .eq("active", true)
+          .order("listing_id", { ascending: false })
+          .limit(1)
+          .single();
+
+        if (freshListing?.listing_id !== undefined) {
+          resolvedListingId = freshListing.listing_id;
+        }
+      }
+
+      if (!resolvedListingId && resolvedListingId !== 0) {
+        setErrMsg("Could not find an active listing. It may have already been cancelled.");
+        setStatus("error");
+        setLoading(false);
+        return;
+      }
+
+      // Send cancelListing to contract with the correct listing_id
       const hash = await writeContractAsync({
         address: MARKETPLACE_ADDRESS,
         abi: CANCEL_ABI,
         functionName: "cancelListing",
-        args: [BigInt(listingId)],
+        args: [BigInt(resolvedListingId)],
       });
-      
+
       await publicClient.waitForTransactionReceipt({ hash });
 
-      // Update Supabase
+      // Update Supabase immediately — sync.js will confirm on next run
       await supabase
         .from("listings")
         .update({ active: false, updated_at: new Date().toISOString() })
-        .eq("listing_id", Number(listingId));
+        .eq("listing_id", Number(resolvedListingId));
 
       setStatus("success");
     } catch (e) {
@@ -70,32 +102,31 @@ export default function DelistModal({ nft, onClose }) {
   }
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center"
       style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(12px)" }}
       onClick={() => { if (!loading) onClose(); }}
     >
-      <div 
+      <div
         className="w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl overflow-hidden shadow-2xl"
         style={{ background: "#0d1219", border: "1px solid rgba(239,68,68,0.15)" }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div 
+        <div
           className="flex items-center justify-between px-5 py-4"
           style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
         >
           <span className="text-sm font-bold uppercase tracking-wide" style={{ color: "#e6edf3" }}>
             Cancel Listing
           </span>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             disabled={loading}
-            style={{ 
-              background: "none", 
-              border: "none", 
-              cursor: loading ? "not-allowed" : "pointer", 
-              color: loading ? "#5a6270" : "#9da7b3" 
+            style={{
+              background: "none", border: "none",
+              cursor: loading ? "not-allowed" : "pointer",
+              color: loading ? "#5a6270" : "#9da7b3",
             }}
           >
             <X size={18} />
@@ -103,23 +134,23 @@ export default function DelistModal({ nft, onClose }) {
         </div>
 
         <div className="p-5 space-y-5">
-          {/* NFT preview */}
+          {/* NFT Preview */}
           <div className="flex gap-4 p-4 rounded-2xl" style={{ background: "#161d28" }}>
-            <div 
-              className="w-20 h-20 rounded-xl flex-shrink-0 overflow-hidden" 
+            <div
+              className="w-20 h-20 rounded-xl flex-shrink-0 overflow-hidden"
               style={{ background: "#121821" }}
             >
               <NFTImage src={nft.image} alt={nft.name} className="w-full h-full object-cover" />
             </div>
             <div className="flex-1 py-1">
-              <div 
-                className="text-[10px] font-bold uppercase tracking-widest mb-1" 
+              <div
+                className="text-[10px] font-bold uppercase tracking-widest mb-1"
                 style={{ color: "#9da7b3" }}
               >
                 {nft.collection}
               </div>
               <div className="font-bold text-lg truncate" style={{ color: "#e6edf3" }}>
-                {nft.name || `#${nft.tokenId}`}
+                {nft.name || `#${nft.tokenId || nft.token_id}`}
               </div>
               <div className="font-mono text-sm mt-1" style={{ color: "#9da7b3" }}>
                 Listed at <span style={{ color: "#22d3ee" }}>{displayPrice} USD</span>
@@ -128,7 +159,7 @@ export default function DelistModal({ nft, onClose }) {
           </div>
 
           {/* Warning */}
-          <div 
+          <div
             className="rounded-xl p-4 flex items-start gap-3"
             style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)" }}
           >
@@ -138,14 +169,14 @@ export default function DelistModal({ nft, onClose }) {
             </p>
           </div>
 
-          {/* Error Message */}
+          {/* Error */}
           {status === "error" && (
-            <div 
+            <div
               className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs"
-              style={{ 
-                background: "rgba(239,68,68,0.1)", 
-                border: "1px solid rgba(239,68,68,0.3)", 
-                color: "#EF4444" 
+              style={{
+                background: "rgba(239,68,68,0.1)",
+                border: "1px solid rgba(239,68,68,0.3)",
+                color: "#EF4444",
               }}
             >
               <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
@@ -153,7 +184,7 @@ export default function DelistModal({ nft, onClose }) {
             </div>
           )}
 
-          {/* Success State */}
+          {/* Success */}
           {status === "success" ? (
             <div className="flex flex-col items-center py-4">
               <CheckCircle2 size={40} className="mb-3" style={{ color: "#22C55E" }} />
@@ -163,14 +194,14 @@ export default function DelistModal({ nft, onClose }) {
               <p className="text-xs mb-5" style={{ color: "#9da7b3" }}>
                 Your NFT has been removed from the marketplace.
               </p>
-              <button 
-                onClick={onClose} 
+              <button
+                onClick={onClose}
                 className="w-full h-12 rounded-2xl text-sm font-bold"
-                style={{ 
-                  background: "rgba(34,211,238,0.1)", 
-                  color: "#22d3ee", 
-                  border: "1px solid rgba(34,211,238,0.3)", 
-                  cursor: "pointer" 
+                style={{
+                  background: "rgba(34,211,238,0.1)",
+                  color: "#22d3ee",
+                  border: "1px solid rgba(34,211,238,0.3)",
+                  cursor: "pointer",
                 }}
               >
                 Done
@@ -179,8 +210,8 @@ export default function DelistModal({ nft, onClose }) {
           ) : (
             /* Action Buttons */
             <div className="space-y-3">
-              <button 
-                onClick={handleDelist} 
+              <button
+                onClick={handleDelist}
                 disabled={loading}
                 className="w-full h-14 rounded-2xl text-base font-bold flex items-center justify-center gap-2 transition-all"
                 style={{
@@ -197,9 +228,9 @@ export default function DelistModal({ nft, onClose }) {
                 {!loading && <XCircle size={18} />}
                 {loading ? "Cancelling..." : "Cancel Listing"}
               </button>
-              
-              <button 
-                onClick={onClose} 
+
+              <button
+                onClick={onClose}
                 disabled={loading}
                 className="w-full h-11 rounded-2xl text-sm font-bold"
                 style={{
