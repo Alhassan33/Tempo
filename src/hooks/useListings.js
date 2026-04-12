@@ -1,23 +1,16 @@
-// useListings hook - FIXED VERSION
-// Replace the entire useListings function in useSupabase.ts with this
+// ─── DROP-IN REPLACEMENT for useListings in useSupabase.ts ──────────────────
+// The bug: .eq("nft_contract", nftContract.toLowerCase()) fails when Supabase
+// stores the address in checksummed form (mixed case). Use ilike instead.
+//
+// Also fixes useRealtimeListings realtime filter the same way.
 
-import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
-
-/**
- * Fetches active listings for a specific NFT contract
- * Prices are returned in both raw units (for contract calls) and display format (for UI)
- * 
- * DB stores: 25000000 (raw 6-decimal units = $25.00)
- * UI shows:  "25.00 USD"
- */
 export function useListings(nftContract: string) {
   const [listings, setListings] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!nftContract || nftContract === 'undefined' || nftContract === 'null') {
+    if (!nftContract || nftContract === "undefined" || nftContract === "null") {
       setIsLoading(false);
       return;
     }
@@ -28,21 +21,20 @@ export function useListings(nftContract: string) {
       setIsLoading(true);
       setError(null);
       try {
+        // ✅ ilike = case-insensitive — works regardless of how address was stored
         const { data, error: dbErr } = await supabase
           .from("listings")
           .select("*")
-          .eq("nft_contract", nftContract.toLowerCase())
+          .ilike("nft_contract", nftContract)  // ← was .eq(...toLowerCase())
           .eq("active", true)
           .order("price", { ascending: true });
 
         if (dbErr) throw dbErr;
-        
         if (!cancelled) {
           setListings(
             (data || []).map((item: any) => ({
               ...item,
-              // CRITICAL FIX: Divide by 1e6 to convert raw units to display USD
-              // DB stores 25000000 (atomic units), UI shows 25.00 USD
+              // price stored as raw 6-decimal units — divide for display
               displayPrice: (Number(item.price) / 1e6).toFixed(2),
             }))
           );
@@ -59,4 +51,67 @@ export function useListings(nftContract: string) {
   }, [nftContract]);
 
   return { listings, isLoading, error };
+}
+
+// ─── useRealtimeListings — same ilike fix on the realtime channel ─────────────
+export function useRealtimeListings(nftContract: string) {
+  const { listings, isLoading, error } = useListings(nftContract);
+  const [liveListings, setLiveListings] = useState<any[]>([]);
+
+  useEffect(() => {
+    setLiveListings(listings);
+  }, [listings]);
+
+  useEffect(() => {
+    if (!nftContract) return;
+
+    // Realtime channel — listens to ALL listing changes, then re-fetches
+    // (filter on channel is unreliable with mixed case, so we filter client-side)
+    const channel = supabase
+      .channel(`listings:${nftContract.toLowerCase()}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "listings",
+        },
+        (payload) => {
+          const row = payload.new as any;
+          // Client-side filter — only care about our contract
+          if (row?.nft_contract?.toLowerCase() !== nftContract?.toLowerCase()) return;
+
+          if (payload.eventType === "INSERT" && row.active) {
+            setLiveListings(prev => {
+              // Don't duplicate
+              const exists = prev.some(l => l.listing_id === row.listing_id);
+              if (exists) return prev;
+              const enriched = { ...row, displayPrice: (Number(row.price) / 1e6).toFixed(2) };
+              return [...prev, enriched].sort((a, b) => Number(a.price) - Number(b.price));
+            });
+          }
+
+          if (payload.eventType === "UPDATE") {
+            setLiveListings(prev =>
+              prev
+                .map(l => l.listing_id === row.listing_id
+                  ? { ...row, displayPrice: (Number(row.price) / 1e6).toFixed(2) }
+                  : l
+                )
+                .filter(l => l.active) // remove if deactivated
+                .sort((a, b) => Number(a.price) - Number(b.price))
+            );
+          }
+
+          if (payload.eventType === "DELETE") {
+            setLiveListings(prev => prev.filter(l => l.listing_id !== (payload.old as any).listing_id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [nftContract]);
+
+  return { listings: liveListings, isLoading, error };
 }
