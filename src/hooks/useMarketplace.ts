@@ -15,7 +15,7 @@ import {
   useAccount, useChainId, usePublicClient,
   useWriteContract, useConnect, useDisconnect,
 } from 'wagmi'
-import { parseUnits } from 'viem'
+import { parseUnits, parseEventLogs } from 'viem'
 import { injected } from 'wagmi/connectors'
 import { MARKETPLACE_ABI, ERC721_ABI, ERC20_ABI } from '../abi/marketplace.js'
 import { tempoMainnet } from '../wagmi.config.js'
@@ -44,13 +44,11 @@ export function rawToBigInt(raw: string | number): bigint {
 
 /** Get listing ID from listing object (handles both snake_case and camelCase) */
 function getListingId(listing: any): string {
-  // Handle both snake_case (from Supabase) and camelCase (from mapRow)
   return String(listing?.listingId ?? listing?.listing_id ?? '0')
 }
 
 /** Get price from listing object (handles both snake_case and camelCase) */
 function getListingPrice(listing: any): string {
-  // Price should always be in raw units from DB
   return String(listing?.price ?? '0')
 }
 
@@ -93,8 +91,8 @@ function mapRow(item: any): Listing {
     seller:       item.seller,
     nftAddress:   item.nft_contract,
     tokenId:      String(item.token_id),
-    price:        String(item.price),          // raw units from DB
-    displayPrice: rawToDisplay(item.price),    // ÷ 1e6 for display
+    price:        String(item.price),
+    displayPrice: rawToDisplay(item.price),
     active:       item.active,
     name:         item.name,
     image:        item.image,
@@ -129,7 +127,7 @@ export function useMarketplace() {
   const status       = (type: 'info'|'success'|'error', msg: string) => setTxStatus({ type, msg })
   const clearStatus  = () => setTxStatus(null)
 
-  // ─── fetchListings — direct table query, no broken RPC ───────────────────
+  // ─── fetchListings ────────────────────────────────────────────────────────
   const fetchListings = useCallback(async () => {
     setLoading(true)
     try {
@@ -137,13 +135,15 @@ export function useMarketplace() {
         .from('listings')
         .select('*')
         .eq('active', true)
-        .order('price', { ascending: true })  // cheapest first
+        .order('price', { ascending: true })
       if (error) throw error
       setListings((data || []).map(mapRow))
     } catch (err) {
       console.error('fetchListings:', err)
       setListings([])
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   // ─── fetchBalance ─────────────────────────────────────────────────────────
@@ -156,108 +156,107 @@ export function useMarketplace() {
         functionName: 'balanceOf',
         args: [account],
       })
-      setBalance((bal as bigint).toString()) // raw 6-decimal units
+      setBalance((bal as bigint).toString())
     } catch {}
   }, [clients, account, network])
 
   // ─── listNFT ──────────────────────────────────────────────────────────────
-  // price arg = user dollar input e.g. "25"
   const listNFT = useCallback(async ({ nftContract, tokenId, price }: {
     nftContract: string; tokenId: string | number; price: string | number
   }) => {
     if (!account || wrongNetwork) return status('error', 'Check connection/network')
-    try {
-      setLoading(true); clearStatus()
 
-      // User types "25" → 25000000n for contract
+    try {
+      setLoading(true)
+      clearStatus()
+
       const priceRaw = dollarToRaw(price)
 
       status('info', 'Step 1/2: Approving NFT...')
       const h1 = await writeContractAsync({
-        address: nftContract as `0x${string}`, abi: ERC721_ABI,
-        functionName: 'approve', args: [network.marketplace, BigInt(tokenId)],
+        address: nftContract as `0x${string}`,
+        abi: ERC721_ABI,
+        functionName: 'approve',
+        args: [network.marketplace, BigInt(tokenId)],
       })
       await publicClient!.waitForTransactionReceipt({ hash: h1 })
 
       status('info', 'Step 2/2: Listing on Tempo...')
       const h2 = await writeContractAsync({
-        address: network.marketplace as `0x${string}`, abi: MARKETPLACE_ABI,
-        functionName: 'listNFT', args: [nftContract, BigInt(tokenId), priceRaw],
+        address: network.marketplace as `0x${string}`,
+        abi: MARKETPLACE_ABI,
+        functionName: 'listNFT',
+        args: [nftContract, BigInt(tokenId), priceRaw],
       })
       const receipt = await publicClient!.waitForTransactionReceipt({ hash: h2 })
 
-      // Write to Supabase — store RAW units, not dollars
+      // ✅ Write to Supabase — parse listingId from event log, never guess
       try {
-        // ✅ Parse the listingId from the Listed event log — 100% reliable
-  const listedLog = receipt.logs.find((log: any) => {
-    try {
-      // The Listed event topic0
-      return log.topics[0] === 
-        '0x' + 'Listed'.padEnd(64, '0') // placeholder — use actual topic below
-    } catch { return false }
-  })
+        const parsedLogs = parseEventLogs({
+          abi: MARKETPLACE_ABI,
+          eventName: 'Listed',
+          logs: receipt.logs,
+        })
 
-  // Better: decode using viem
-  const { parseEventLogs } = await import('viem')
-  const parsedLogs = parseEventLogs({
-    abi: MARKETPLACE_ABI,
-    eventName: 'Listed',
-    logs: receipt.logs,
-  })
+        const listingId = (parsedLogs[0]?.args as any)?.listingId
+        if (listingId === undefined) throw new Error('Could not parse listingId from logs')
 
-  const listingId = parsedLogs[0]?.args?.listingId
-  if (listingId === undefined) throw new Error('Could not parse listingId from logs')
+        await supabase.from('listings').upsert({
+          listing_id:   Number(listingId),
+          seller:       account.toLowerCase(),
+          nft_contract: nftContract.toLowerCase(),
+          token_id:     Number(tokenId),
+          price:        Number(priceRaw),
+          active:       true,               // ✅ always true on fresh listing
+          tx_hash:      h2,
+          block_number: Number(receipt.blockNumber),
+          updated_at:   new Date().toISOString(),
+        }, { onConflict: 'listing_id' })
 
-  await supabase.from('listings').upsert({
-    listing_id:   Number(listingId),   // ✅ from event, not totalListings
-    seller:       account.toLowerCase(),
-    nft_contract: nftContract.toLowerCase(),
-    token_id:     Number(tokenId),
-    price:        Number(priceRaw),
-    active:       true,
-    tx_hash:      h2,
-    block_number: Number(receipt.blockNumber),
-    updated_at:   new Date().toISOString(),
-  }, { onConflict: 'listing_id' })
+        fetchListings()
+      } catch (dbErr) {
+        console.warn('Supabase write failed (cron will sync):', dbErr)
+      }
 
-  fetchListings()
-} catch (dbErr) { console.warn('Supabase write failed (cron will sync):', dbErr) }
+      status('success', 'NFT Listed Successfully!')
+    } catch (err: any) {
+      status('error', parseContractError(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [account, wrongNetwork, network, writeContractAsync, publicClient, fetchListings])
 
-  // ─── buyNFT ────────────────────────────────────────────────────────────────
-  // listing.price = raw units e.g. "25000000"
-  // listing.listingId or listing.listing_id = the listing ID
-  // MarketplaceV2: buyNFT(listingId, maxPrice) — maxPrice = same raw units
+  // ─── buyNFT ───────────────────────────────────────────────────────────────
   const buyNFT = useCallback(async (listing: any) => {
     if (!account || wrongNetwork) return status('error', 'Check connection')
+
     try {
-      setLoading(true); clearStatus()
+      setLoading(true)
+      clearStatus()
 
-      // Get listing ID (handles both snake_case and camelCase)
       const listingId = getListingId(listing)
-      // Get price in raw units
-      const priceRaw = rawToBigInt(getListingPrice(listing))
+      const priceRaw  = rawToBigInt(getListingPrice(listing))
 
-      if (listingId === '0') {
-        throw new Error('Invalid listing ID')
-      }
+      if (listingId === '0') throw new Error('Invalid listing ID')
 
       status('info', 'Step 1/2: Approving pathUSD...')
       const h1 = await writeContractAsync({
-        address: network.paymentToken as `0x${string}`, abi: ERC20_ABI,
-        functionName: 'approve', args: [network.marketplace, priceRaw],
+        address: network.paymentToken as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [network.marketplace, priceRaw],
       })
       await publicClient!.waitForTransactionReceipt({ hash: h1 })
 
       status('info', 'Step 2/2: Completing purchase...')
       const h2 = await writeContractAsync({
-        address: network.marketplace as `0x${string}`, abi: MARKETPLACE_ABI,
+        address: network.marketplace as `0x${string}`,
+        abi: MARKETPLACE_ABI,
         functionName: 'buyNFT',
-        // ✅ V2: (listingId, maxPrice) — prevents price-change grief
-        args: [BigInt(listingId), priceRaw],
+        args: [BigInt(listingId), priceRaw], // ✅ V2: (listingId, maxPrice)
       })
       await publicClient!.waitForTransactionReceipt({ hash: h2 })
 
-      // Mark inactive in Supabase immediately
       try {
         await supabase.from('listings')
           .update({ active: false, updated_at: new Date().toISOString() })
@@ -268,36 +267,50 @@ export function useMarketplace() {
       await Promise.all([fetchListings(), fetchBalance()])
     } catch (err: any) {
       status('error', parseContractError(err))
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }, [account, wrongNetwork, network, writeContractAsync, publicClient, fetchListings, fetchBalance])
 
   // ─── delistNFT ────────────────────────────────────────────────────────────
   const delistNFT = useCallback(async (listingId: string | number) => {
     if (!account || wrongNetwork) return status('error', 'Check connection')
+
     try {
-      setLoading(true); clearStatus()
+      setLoading(true)
+      clearStatus()
       status('info', 'Cancelling listing...')
+
       const h1 = await writeContractAsync({
-        address: network.marketplace as `0x${string}`, abi: MARKETPLACE_ABI,
-        functionName: 'cancelListing', args: [BigInt(listingId)],
+        address: network.marketplace as `0x${string}`,
+        abi: MARKETPLACE_ABI,
+        functionName: 'cancelListing',
+        args: [BigInt(listingId)],
       })
       await publicClient!.waitForTransactionReceipt({ hash: h1 })
+
       try {
         await supabase.from('listings')
           .update({ active: false, updated_at: new Date().toISOString() })
           .eq('listing_id', Number(listingId))
       } catch {}
+
       status('success', 'Listing Cancelled!')
       fetchListings()
       return true
     } catch (err: any) {
       status('error', parseContractError(err))
       return false
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }, [account, wrongNetwork, network, writeContractAsync, publicClient, fetchListings])
 
   useEffect(() => {
-    if (isConnected && !wrongNetwork) { fetchListings(); fetchBalance() }
+    if (isConnected && !wrongNetwork) {
+      fetchListings()
+      fetchBalance()
+    }
   }, [isConnected, wrongNetwork, fetchListings, fetchBalance])
 
   return {
