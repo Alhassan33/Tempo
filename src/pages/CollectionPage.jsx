@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   CheckCircle2, ExternalLink, Twitter, Globe, MessageCircle,
   TrendingDown, TrendingUp, Square, Grid2X2, List as ListIcon,
-  BarChart2, ChevronDown, ChevronUp, SlidersHorizontal, X, Users
+  BarChart2, ChevronDown, ChevronUp, SlidersHorizontal, X, Users, Search
 } from "lucide-react";
 import { useCollection, useRealtimeListings, useCollectionStats } from "@/hooks/useSupabase";
 import { supabase } from "@/lib/supabase";
@@ -14,22 +14,17 @@ import ActivityFeed from "@/components/ActivityFeed.jsx";
 import PriceChart from "@/components/PriceChart.jsx";
 import BuyModal from "@/components/BuyModal.jsx";
 
-const TABS       = ["Items", "Listings", "Activity", "Analytics", "Owners"];
-const EXPLORER   = "https://explore.tempo.xyz";
-const PAGE_SIZE  = 50;
-const VIEW       = { SINGLE: "single", GRID: "grid", LIST: "list" };
-const CYCLE      = [VIEW.SINGLE, VIEW.GRID, VIEW.LIST];
+const TABS      = ["Items", "Listings", "Activity", "Analytics", "Owners"];
+const EXPLORER  = "https://explore.tempo.xyz";
+const PAGE_SIZE = 50;
+const VIEW      = { SINGLE: "single", GRID: "grid", LIST: "list" };
+const CYCLE     = [VIEW.GRID, VIEW.LIST, VIEW.SINGLE];
 const VIEW_LABEL = { [VIEW.SINGLE]: "Single", [VIEW.GRID]: "Grid", [VIEW.LIST]: "List" };
-const VIEW_ICON  = {
-  [VIEW.SINGLE]: Square,
-  [VIEW.GRID]:   Grid2X2,
-  [VIEW.LIST]:   ListIcon,
-};
+const VIEW_ICON  = { [VIEW.SINGLE]: Square, [VIEW.GRID]: Grid2X2, [VIEW.LIST]: ListIcon };
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 const StatItem = ({ label, value, subValue, isTrend }) => (
-  <div className="rounded-2xl p-4"
-    style={{ background: "#11161D", border: "1px solid rgba(255,255,255,0.05)" }}>
+  <div className="rounded-2xl p-4" style={{ background: "#11161D", border: "1px solid rgba(255,255,255,0.05)" }}>
     <div className="text-[10px] font-medium uppercase tracking-wider mb-1" style={{ color: "#9CA3AF" }}>{label}</div>
     <div className="flex items-baseline gap-2">
       <div className="font-mono text-lg font-bold" style={{ color: "#EDEDED" }}>{value}</div>
@@ -44,17 +39,17 @@ const StatItem = ({ label, value, subValue, isTrend }) => (
   </div>
 );
 
-// ─── Single cycle toggle button ───────────────────────────────────────────────
+// ─── Single cycle view toggle ──────────────────────────────────────────────────
 function ViewToggle({ current, onChange }) {
-  const Icon = VIEW_ICON[current];
+  const Icon = VIEW_ICON[current] || Grid2X2;
   function cycle() {
     const idx  = CYCLE.indexOf(current);
     const next = CYCLE[(idx + 1) % CYCLE.length];
     onChange(next);
   }
   return (
-    <button onClick={cycle} title={`View: ${VIEW_LABEL[current]}`}
-      className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-xs font-semibold transition-all"
+    <button onClick={cycle} title={`Switch view`}
+      className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-xs font-semibold"
       style={{ background: "rgba(0,230,168,0.08)", color: "#00E6A8", border: "1px solid rgba(0,230,168,0.2)", cursor: "pointer" }}>
       <Icon size={14} />
       {VIEW_LABEL[current]}
@@ -62,38 +57,47 @@ function ViewToggle({ current, onChange }) {
   );
 }
 
-// ─── Trait Filter sidebar/panel ───────────────────────────────────────────────
+// ─── Trait Filter ─────────────────────────────────────────────────────────────
 function TraitFilter({ traits, selected, onChange, onClear }) {
   const [open, setOpen] = useState({});
-  const keys = Object.keys(traits || {});
-  if (!keys.length) return null;
 
-  const totalSelected = Object.values(selected).flat().length;
+  // ✅ Guard: if traits is empty or invalid, render nothing
+  const keys = useMemo(() => Object.keys(traits || {}), [traits]);
+  if (!keys.length) return (
+    <div className="w-52 flex-shrink-0">
+      <p className="text-xs text-center py-8" style={{ color: "#6B7280" }}>
+        Traits load as items are displayed
+      </p>
+    </div>
+  );
+
+  // ✅ Guard: ensure selected is always an object
+  const safeSelected = selected || {};
+  const totalSelected = Object.values(safeSelected).flat().length;
 
   return (
-    <div className="flex flex-col gap-2 w-56 flex-shrink-0">
+    <div className="flex flex-col gap-2 w-52 flex-shrink-0">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "#9CA3AF" }}>Filters</span>
+        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "#9CA3AF" }}>Traits</span>
         {totalSelected > 0 && (
-          <button onClick={onClear}
-            className="flex items-center gap-1 text-xs"
+          <button onClick={onClear} className="flex items-center gap-1 text-xs"
             style={{ color: "#EF4444", background: "none", border: "none", cursor: "pointer" }}>
-            <X size={11} /> Clear
+            <X size={11} /> Clear all
           </button>
         )}
       </div>
       {keys.map(trait => {
-        const isOpen      = open[trait] ?? false;
-        const values      = traits[trait] ?? [];
-        const selectedVals = selected[trait] ?? [];
+        const isOpen       = open[trait] ?? false;
+        const values       = traits[trait] ?? [];
+        const selectedVals = safeSelected[trait] ?? [];
         return (
           <div key={trait} className="rounded-xl overflow-hidden"
             style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)" }}>
             <button className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold"
               style={{ color: "#e6edf3", background: "none", border: "none", cursor: "pointer" }}
               onClick={() => setOpen(p => ({ ...p, [trait]: !p[trait] }))}>
-              <span>{trait}</span>
-              <div className="flex items-center gap-1.5">
+              <span className="truncate mr-2">{trait}</span>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
                 {selectedVals.length > 0 && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded-md"
                     style={{ background: "rgba(0,230,168,0.12)", color: "#00E6A8" }}>
@@ -114,11 +118,11 @@ function TraitFilter({ traits, selected, onChange, onClear }) {
                           const next = checked
                             ? selectedVals.filter(v => v !== value)
                             : [...selectedVals, value];
-                          onChange({ ...selected, [trait]: next });
+                          onChange({ ...safeSelected, [trait]: next });
                         }}
                         style={{ accentColor: "#00E6A8" }} />
-                      <span style={{ color: "#e6edf3" }}>{value}</span>
-                      <span className="ml-auto" style={{ color: "#9CA3AF" }}>{count}</span>
+                      <span className="flex-1 truncate" style={{ color: "#e6edf3" }}>{value}</span>
+                      <span className="flex-shrink-0" style={{ color: "#9CA3AF" }}>{count}</span>
                     </label>
                   );
                 })}
@@ -131,57 +135,49 @@ function TraitFilter({ traits, selected, onChange, onClear }) {
   );
 }
 
-// ─── NFT Card (no buy button — click to open item page) ───────────────────────
-function NFTCard({ token, collectionName, slug, listing, viewMode, onBuy }) {
+// ─── Items NFT Card (no buy button) ──────────────────────────────────────────
+function ItemCard({ token, collectionName, slug, listing, viewMode }) {
   const navigate     = useNavigate();
   const isListed     = !!listing;
   const displayPrice = listing ? (Number(listing.price) / 1e6).toFixed(2) : null;
   const tokenId      = token.tokenId || token.token_id;
-  const imgSrc       = token.image || listing?.image || "";
-
-  function goToItem(e) {
-    e.stopPropagation();
-    navigate(`/collection/${slug}/${tokenId}`);
-  }
+  // ✅ Always prefer IPFS metadata name, fall back to collection#id
+  const name         = token.name || `${collectionName} #${tokenId}`;
+  const imgSrc       = token.image || "";
 
   if (viewMode === VIEW.LIST) {
     return (
-      <div onClick={goToItem}
+      <div onClick={() => navigate(`/collection/${slug}/${tokenId}`)}
         className="flex items-center gap-4 p-3 rounded-xl cursor-pointer transition-all"
         style={{ background: "#11161D", border: isListed ? "1px solid rgba(0,230,168,0.2)" : "1px solid rgba(255,255,255,0.05)" }}
         onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(0,230,168,0.35)"; }}
         onMouseLeave={e => { e.currentTarget.style.borderColor = isListed ? "rgba(0,230,168,0.2)" : "rgba(255,255,255,0.05)"; }}>
         <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0" style={{ background: "#161d28" }}>
-          {imgSrc
-            ? <img src={imgSrc} alt="" className="w-full h-full object-cover" onError={e => { e.target.style.display = "none"; }} />
+          {imgSrc ? <img src={imgSrc} alt="" className="w-full h-full object-cover" onError={e => { e.target.style.display = "none"; }} />
             : <div className="w-full h-full animate-pulse" style={{ background: "#1a2232" }} />}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: "#9CA3AF" }}>{collectionName}</div>
-          <div className="text-sm font-bold truncate" style={{ color: "#EDEDED" }}>{token.name || `#${tokenId}`}</div>
+          <div className="text-xs font-bold truncate" style={{ color: "#EDEDED" }}>{name}</div>
+          <div className="text-[10px]" style={{ color: "#6B7280" }}>#{tokenId}</div>
         </div>
         <div className="text-right flex-shrink-0">
           {isListed
             ? <div className="font-mono text-sm font-bold" style={{ color: "#00E6A8" }}>{displayPrice} USD</div>
             : <span className="text-xs" style={{ color: "#6B7280" }}>Not listed</span>}
         </div>
-        <div className="text-xs font-mono px-2 py-1 rounded-lg flex-shrink-0"
-          style={{ background: "rgba(255,255,255,0.04)", color: "#6B7280" }}>#{tokenId}</div>
       </div>
     );
   }
 
   return (
-    <div onClick={goToItem}
-      className="nft-card group rounded-2xl overflow-hidden cursor-pointer relative"
+    <div onClick={() => navigate(`/collection/${slug}/${tokenId}`)}
+      className="group rounded-2xl overflow-hidden cursor-pointer relative"
       style={{ background: "#11161D", border: isListed ? "1px solid rgba(0,230,168,0.2)" : "1px solid rgba(255,255,255,0.05)", transition: "all 0.2s" }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(0,230,168,0.5)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(0,230,168,0.4)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = isListed ? "rgba(0,230,168,0.2)" : "rgba(255,255,255,0.05)"; e.currentTarget.style.transform = "translateY(0)"; }}>
       <div className="relative aspect-square overflow-hidden" style={{ background: "#161d28" }}>
         {imgSrc
-          ? <img src={imgSrc} alt={token.name || `#${tokenId}`}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-              onError={e => { e.target.style.display = "none"; }} />
+          ? <img src={imgSrc} alt={name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" onError={e => { e.target.style.display = "none"; }} />
           : <div className="w-full h-full flex items-center justify-center">
               <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "#00E6A8", borderTopColor: "transparent" }} />
             </div>}
@@ -193,8 +189,7 @@ function NFTCard({ token, collectionName, slug, listing, viewMode, onBuy }) {
         )}
       </div>
       <div className="p-3">
-        <div className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "#9CA3AF" }}>{collectionName}</div>
-        <div className="text-sm font-bold truncate mb-1" style={{ color: "#EDEDED" }}>{token.name || `#${tokenId}`}</div>
+        <div className="text-sm font-bold truncate mb-1" style={{ color: "#EDEDED" }}>{name}</div>
         <div className="flex items-center justify-between">
           {isListed
             ? <span className="font-mono text-sm font-bold" style={{ color: "#00E6A8" }}>{displayPrice} USD</span>
@@ -206,11 +201,13 @@ function NFTCard({ token, collectionName, slug, listing, viewMode, onBuy }) {
   );
 }
 
-// ─── Listings tab card (with buy button) ─────────────────────────────────────
-function ListingCard({ listing, collectionName, slug, viewMode, onBuy }) {
+// ─── Listings tab card (with buy) ─────────────────────────────────────────────
+function ListingCard({ listing, slug, viewMode, onBuy }) {
   const navigate     = useNavigate();
   const displayPrice = (Number(listing.price) / 1e6).toFixed(2);
   const tokenId      = listing.token_id;
+  // ✅ Always use the name from IPFS metadata (stored in listing.name after enrichment)
+  const name         = listing.name || `#${tokenId}`;
   const imgSrc       = listing.image || "";
 
   if (viewMode === VIEW.LIST) {
@@ -222,8 +219,8 @@ function ListingCard({ listing, collectionName, slug, viewMode, onBuy }) {
           {imgSrc ? <img src={imgSrc} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full animate-pulse" style={{ background: "#1a2232" }} />}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-bold truncate" style={{ color: "#EDEDED" }}>{listing.name || `#${tokenId}`}</div>
-          <div className="text-xs" style={{ color: "#9CA3AF" }}>#{tokenId}</div>
+          <div className="text-sm font-bold truncate" style={{ color: "#EDEDED" }}>{name}</div>
+          <div className="text-[10px]" style={{ color: "#6B7280" }}>#{tokenId}</div>
         </div>
         <div className="font-mono text-sm font-bold flex-shrink-0" style={{ color: "#00E6A8" }}>{displayPrice} USD</div>
         <button onClick={e => { e.stopPropagation(); onBuy(listing); }}
@@ -243,21 +240,20 @@ function ListingCard({ listing, collectionName, slug, viewMode, onBuy }) {
       onClick={() => navigate(`/collection/${slug}/${tokenId}`)}>
       <div className="relative aspect-square overflow-hidden" style={{ background: "#161d28" }}>
         {imgSrc
-          ? <img src={imgSrc} alt={listing.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" onError={e => { e.target.style.display = "none"; }} />
+          ? <img src={imgSrc} alt={name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" onError={e => { e.target.style.display = "none"; }} />
           : <div className="w-full h-full flex items-center justify-center">
               <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "#00E6A8", borderTopColor: "transparent" }} />
             </div>}
-        {/* Buy button slides up on hover */}
+        {/* Buy slides up on hover */}
         <button
           className="buy-slide absolute bottom-0 left-0 right-0 flex items-center justify-center gap-1.5 py-3 font-bold text-sm"
           style={{ background: "linear-gradient(to top, rgba(0,230,168,0.97), rgba(0,230,168,0.85))", color: "#0A0F14", transform: "translateY(100%)", transition: "transform 0.25s cubic-bezier(0.4,0,0.2,1)", border: "none", cursor: "pointer" }}
           onClick={e => { e.stopPropagation(); onBuy(listing); }}>
-          Buy Now — {displayPrice} USD
+          Buy — {displayPrice} USD
         </button>
       </div>
       <div className="p-3">
-        <div className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "#9CA3AF" }}>{collectionName}</div>
-        <div className="text-sm font-bold truncate mb-1" style={{ color: "#EDEDED" }}>{listing.name || `#${tokenId}`}</div>
+        <div className="text-sm font-bold truncate mb-1" style={{ color: "#EDEDED" }}>{name}</div>
         <div className="flex items-center justify-between">
           <span className="font-mono text-sm font-bold" style={{ color: "#00E6A8" }}>{displayPrice} USD</span>
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.04)", color: "#6B7280" }}>#{tokenId}</span>
@@ -284,18 +280,13 @@ function OwnersTab({ contractAddress }) {
         .neq("owner_address", "0x0000000000000000000000000000000000000000")
         .neq("owner_address", "0x218ab916fe8d7a1ca87d7cd5dfb1d44684ab926b");
 
-      // Count per owner
       const map = {};
       (data || []).forEach(n => {
         const addr = n.owner_address?.toLowerCase();
         if (addr) map[addr] = (map[addr] || 0) + 1;
       });
 
-      const sorted = Object.entries(map)
-        .map(([address, count]) => ({ address, count }))
-        .sort((a, b) => b.count - a.count);
-
-      setOwners(sorted);
+      setOwners(Object.entries(map).map(([address, count]) => ({ address, count })).sort((a, b) => b.count - a.count));
       setLoading(false);
     }
     load();
@@ -325,17 +316,16 @@ function OwnersTab({ contractAddress }) {
         {sorted.map((owner, i) => (
           <div key={owner.address} className="flex items-center gap-3 p-3 rounded-xl"
             style={{ background: "#11161D", border: "1px solid rgba(255,255,255,0.05)" }}>
-            <span className="text-xs font-mono w-6 text-center flex-shrink-0" style={{ color: "#6B7280" }}>{sortAsc ? sorted.length - i : i + 1}</span>
+            <span className="text-xs font-mono w-6 text-center flex-shrink-0" style={{ color: "#6B7280" }}>{i + 1}</span>
             <a href={`${EXPLORER}/address/${owner.address}`} target="_blank" rel="noreferrer"
-              className="flex-1 font-mono text-sm truncate hover:underline"
-              style={{ color: "#22d3ee" }}>
+              className="flex-1 font-mono text-sm truncate hover:underline" style={{ color: "#22d3ee" }}>
               {owner.address}
             </a>
             <span className="font-mono text-sm font-bold flex-shrink-0" style={{ color: "#EDEDED" }}>
               {owner.count} <span style={{ color: "#9CA3AF", fontWeight: 400 }}>NFTs</span>
             </span>
             <div className="w-16 h-1.5 rounded-full overflow-hidden flex-shrink-0" style={{ background: "rgba(255,255,255,0.06)" }}>
-              <div className="h-full rounded-full" style={{ width: `${(owner.count / (sorted[0]?.count || 1)) * 100}%`, background: "#00E6A8" }} />
+              <div className="h-full rounded-full" style={{ width: `${(owner.count / (owners[0]?.count || 1)) * 100}%`, background: "#00E6A8" }} />
             </div>
           </div>
         ))}
@@ -343,17 +333,21 @@ function OwnersTab({ contractAddress }) {
     </div>
   );
 }
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function CollectionPage() {
   const { id } = useParams();
-  const [viewMode,      setViewMode]      = useState(VIEW.GRID);
-  const [tab,           setTab]           = useState("Items");
-  const [buyModal,      setBuyModal]      = useState(null);
-  const [liveFlash,     setLiveFlash]     = useState(false);
-  const [traitSelected, setTraitSelected] = useState({});
-  const [showFilter,    setShowFilter]    = useState(false);
-  const [search,        setSearch]        = useState("");
-  const [priceSort,     setPriceSort]     = useState("asc"); // asc | desc
+  const [viewMode,       setViewMode]       = useState(VIEW.GRID);
+  const [tab,            setTab]            = useState("Items");
+  const [buyModal,       setBuyModal]       = useState(null);
+  const [liveFlash,      setLiveFlash]      = useState(false);
+  const [traitSelected,  setTraitSelected]  = useState({});
+  const [showFilter,     setShowFilter]     = useState(false);
+  const [search,         setSearch]         = useState("");
+  const [priceSort,      setPriceSort]      = useState("asc");
+  // ✅ collectionTraits must be STATE not a plain object ref — otherwise filter update won't re-render
+  const [collectionTraits, setCollectionTraits] = useState({});
+  const traitAccumRef = useRef({}); // accumulator ref, only converts to state after each page
 
   const { collection, isLoading: colLoading } = useCollection(id);
   const { stats: rpcStats }  = useCollectionStats(collection?.contract_address || "");
@@ -368,24 +362,21 @@ export default function CollectionPage() {
 
   const listedIds = useMemo(() => new Set(activeListings.map(l => String(l.token_id))), [activeListings]);
 
+  // ✅ listedTokensWithImages — always fetched from IPFS for correct names/images
   const [listedTokensWithImages, setListedTokensWithImages] = useState([]);
   const [unlistedTokens,  setUnlistedTokens]  = useState([]);
   const [tokensLoading,   setTokensLoading]   = useState(false);
   const [page,            setPage]            = useState(1);
   const [hasMore,         setHasMore]         = useState(true);
-  const [collectionTraits, setCollectionTraits] = useState({});
   const loaderRef = useRef(null);
 
-  // ✅ Realtime — flash live dot on any listing change
+  // Realtime flash
   useEffect(() => {
     if (!contractAddr) return;
     const channel = supabase
       .channel(`col-live:${contractAddr}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "listings",
-        filter: `nft_contract=eq.${contractAddr}` }, () => {
-        setLiveFlash(true);
-        setTimeout(() => setLiveFlash(false), 1500);
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "listings", filter: `nft_contract=eq.${contractAddr}` },
+        () => { setLiveFlash(true); setTimeout(() => setLiveFlash(false), 1500); })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [contractAddr]);
@@ -418,20 +409,28 @@ export default function CollectionPage() {
     return base;
   }, [collection?.metadata_base_uri]);
 
-  // Fetch listed tokens with images
+  // ✅ Fetch listed tokens — always from IPFS for correct name + image
   useEffect(() => {
     if (!ipfsBase || !activeListings.length) { setListedTokensWithImages([]); return; }
     let cancelled = false;
     Promise.all(activeListings.map(async listing => {
-      if (listing.image || listing.image_url) {
-        return { ...listing, tokenId: String(listing.token_id), name: listing.name || `${collection?.name} #${listing.token_id}`, image: listing.image || listing.image_url };
-      }
       try {
         const res  = await fetch(`${ipfsBase}${listing.token_id}.json`, { cache: "force-cache" });
         const json = await res.json();
-        return { ...listing, tokenId: String(listing.token_id), name: json.name || `${collection?.name} #${listing.token_id}`, image: extractImageUrl(json) };
+        return {
+          ...listing,
+          tokenId: String(listing.token_id),
+          // ✅ Always use json.name — this is the authoritative name from metadata
+          name:    json.name || `${collection?.name} #${listing.token_id}`,
+          image:   extractImageUrl(json) || listing.image || listing.image_url || "",
+        };
       } catch {
-        return { ...listing, tokenId: String(listing.token_id), name: listing.name || `${collection?.name} #${listing.token_id}`, image: "" };
+        return {
+          ...listing,
+          tokenId: String(listing.token_id),
+          name:    listing.name || `${collection?.name} #${listing.token_id}`,
+          image:   listing.image || listing.image_url || "",
+        };
       }
     })).then(results => { if (!cancelled) setListedTokensWithImages(results); });
     return () => { cancelled = true; };
@@ -454,25 +453,34 @@ export default function CollectionPage() {
           const image = extractImageUrl(json);
           const attrs = json.attributes || [];
 
-          // Build trait map for filter
+          // Accumulate traits into ref (not state — avoids re-render per token)
           attrs.forEach(a => {
-            if (!a.trait_type || !a.value) return;
-            if (!collectionTraits[a.trait_type]) collectionTraits[a.trait_type] = {};
+            if (!a.trait_type || a.value === undefined) return;
+            const t = a.trait_type;
             const v = String(a.value);
-            collectionTraits[a.trait_type][v] = (collectionTraits[a.trait_type][v] || 0) + 1;
+            if (!traitAccumRef.current[t]) traitAccumRef.current[t] = {};
+            traitAccumRef.current[t][v] = (traitAccumRef.current[t][v] || 0) + 1;
           });
 
-          return { tokenId: String(tokenId), token_id: tokenId, name: json.name || `${collection?.name} #${tokenId}`, image, attributes: attrs };
+          return {
+            tokenId: String(tokenId),
+            token_id: tokenId,
+            // ✅ Always use json.name
+            name:  json.name || `${collection?.name} #${tokenId}`,
+            image,
+            attributes: attrs,
+          };
         } catch {
           return { tokenId: String(tokenId), token_id: tokenId, name: `${collection?.name} #${tokenId}`, image: "", attributes: [] };
         }
       })
     );
-
-    // Convert trait map to array format for TraitFilter
+    // ✅ Convert accumulated traits to state ONCE after page load (not per token)
     const traitArr = {};
-    Object.entries(collectionTraits).forEach(([trait, vals]) => {
-      traitArr[trait] = Object.entries(vals).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count);
+    Object.entries(traitAccumRef.current).forEach(([trait, vals]) => {
+      traitArr[trait] = Object.entries(vals)
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => b.count - a.count);
     });
     setCollectionTraits(traitArr);
 
@@ -482,7 +490,14 @@ export default function CollectionPage() {
   }, [ipfsBase, collection, listedIds, rpcStats.totalSupply]);
 
   useEffect(() => {
-    if (ipfsBase) { setUnlistedTokens([]); setPage(1); setHasMore(true); fetchPage(1); }
+    if (ipfsBase) {
+      setUnlistedTokens([]);
+      setPage(1);
+      setHasMore(true);
+      traitAccumRef.current = {};
+      setCollectionTraits({});
+      fetchPage(1);
+    }
   }, [ipfsBase, fetchPage]);
 
   const listedCount = listedIds.size;
@@ -501,9 +516,10 @@ export default function CollectionPage() {
     return () => obs.disconnect();
   }, [hasMore, tokensLoading, tab]);
 
-  // Trait filter for Items tab
+  // Filter + search for Items tab
   const filteredUnlisted = useMemo(() => {
-    const hasFilter = Object.values(traitSelected).some(v => v.length > 0);
+    const safeSelected = traitSelected || {};
+    const hasFilter = Object.values(safeSelected).some(v => v?.length > 0);
     const hasSearch = search.trim().length > 0;
     if (!hasFilter && !hasSearch) return unlistedTokens;
     return unlistedTokens.filter(token => {
@@ -512,8 +528,8 @@ export default function CollectionPage() {
         if (!(token.name || "").toLowerCase().includes(q) && !String(token.token_id).includes(q)) return false;
       }
       if (hasFilter) {
-        return Object.entries(traitSelected).every(([trait, vals]) => {
-          if (!vals.length) return true;
+        return Object.entries(safeSelected).every(([trait, vals]) => {
+          if (!vals?.length) return true;
           return (token.attributes || []).some(a => a.trait_type === trait && vals.includes(String(a.value)));
         });
       }
@@ -521,18 +537,22 @@ export default function CollectionPage() {
     });
   }, [unlistedTokens, traitSelected, search]);
 
+  const filteredListedForItems = useMemo(() => {
+    if (!search.trim()) return listedTokensWithImages;
+    const q = search.toLowerCase();
+    return listedTokensWithImages.filter(t =>
+      (t.name || "").toLowerCase().includes(q) || String(t.token_id).includes(q)
+    );
+  }, [listedTokensWithImages, search]);
+
+  // Filter for Listings tab — search only (traits not loaded for listed items separately)
   const filteredListings = useMemo(() => {
-    const hasFilter = Object.values(traitSelected).some(v => v.length > 0);
-    const hasSearch = search.trim().length > 0;
-    if (!hasFilter && !hasSearch) return listedTokensWithImages;
-    return listedTokensWithImages.filter(token => {
-      if (hasSearch) {
-        const q = search.toLowerCase();
-        if (!(token.name || "").toLowerCase().includes(q) && !String(token.token_id).includes(q)) return false;
-      }
-      return true;
-    });
-  }, [listedTokensWithImages, traitSelected, search]);
+    if (!search.trim()) return listedTokensWithImages;
+    const q = search.toLowerCase();
+    return listedTokensWithImages.filter(t =>
+      (t.name || "").toLowerCase().includes(q) || String(t.token_id).includes(q)
+    );
+  }, [listedTokensWithImages, search]);
 
   const gridClass = useMemo(() => {
     if (viewMode === VIEW.LIST)   return "flex flex-col gap-2";
@@ -546,7 +566,7 @@ export default function CollectionPage() {
     </div>
   );
 
-  const showSidebar = (tab === "Items" || tab === "Listings") && showFilter;
+  const showSidebar = (tab === "Items") && showFilter && Object.keys(collectionTraits).length > 0;
 
   return (
     <>
@@ -564,7 +584,7 @@ export default function CollectionPage() {
 
         <div className="px-4 sm:px-6 max-w-7xl mx-auto -mt-16 relative z-10">
 
-          {/* Header */}
+          {/* Collection header */}
           <div className="flex flex-col md:flex-row md:items-end gap-5 mb-8">
             <div className="w-28 h-28 rounded-3xl overflow-hidden flex-shrink-0"
               style={{ border: "4px solid #0A0F14", background: "#11161D" }}>
@@ -590,94 +610,99 @@ export default function CollectionPage() {
 
           {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
-            <StatItem label="Floor Price" value={stats.floor} />
-            <StatItem label="Top Offer"   value={stats.topOffer} />
-            <StatItem label="24H Volume"  value={stats.vol24h} />
+            <StatItem label="Floor Price"  value={stats.floor} />
+            <StatItem label="Top Offer"    value={stats.topOffer} />
+            <StatItem label="24H Volume"   value={stats.vol24h} />
             <StatItem label="Total Volume" value={stats.totalVol} />
-            <StatItem label="Market Cap"  value={stats.mktCap} />
-            <StatItem label="Owners"      value={stats.owners}  subValue={stats.ownerPct} />
-            <StatItem label="Listed"      value={stats.listed}  subValue={stats.listedPct} />
-            <StatItem label="Supply"      value={stats.supply} />
-            <StatItem label="Royalties"   value={stats.royalties} />
+            <StatItem label="Market Cap"   value={stats.mktCap} />
+            <StatItem label="Owners"       value={stats.owners}  subValue={stats.ownerPct} />
+            <StatItem label="Listed"       value={stats.listed}  subValue={stats.listedPct} />
+            <StatItem label="Supply"       value={stats.supply} />
+            <StatItem label="Royalties"    value={stats.royalties} />
           </div>
 
-          {/* Tabs + toolbar */}
-          <div className="border-b mb-6" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-            <div className="flex items-center justify-between">
-              {/* Tabs */}
-              <div className="flex gap-0 overflow-x-auto">
-                {TABS.map(t => (
-                  <button key={t} onClick={() => setTab(t)}
-                    className="flex items-center gap-1.5 px-4 pb-4 text-sm font-medium uppercase tracking-widest whitespace-nowrap transition-all"
-                    style={{ background: "none", border: "none", borderBottom: tab === t ? "2px solid #00E6A8" : "2px solid transparent", color: tab === t ? "#00E6A8" : "#9CA3AF", cursor: "pointer" }}>
-                    {t === "Analytics" && <BarChart2 size={13} />}
-                    {t === "Owners"    && <Users size={13} />}
-                    {t}
-                    {t === "Listings" && activeListings.length > 0 && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-md ml-0.5"
-                        style={{ background: "rgba(0,230,168,0.12)", color: "#00E6A8" }}>
-                        {activeListings.length}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              {/* Toolbar — Items + Listings tabs only */}
-              {(tab === "Items" || tab === "Listings") && (
-                <div className="flex items-center gap-2 pb-3">
-                  {/* Live dot */}
-                  <div className="flex items-center gap-1">
-                    <div className="w-1.5 h-1.5 rounded-full animate-pulse"
-                      style={{ background: liveFlash ? "#22C55E" : "#00E6A8", boxShadow: liveFlash ? "0 0 6px #22C55E" : "none", transition: "all 0.3s" }} />
-                    <span className="text-[10px]" style={{ color: "#9CA3AF" }}>Live</span>
-                  </div>
-
-                  {/* Search */}
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    className="h-9 w-32 sm:w-44 px-3 rounded-xl text-xs outline-none"
-                    style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.08)", color: "#e6edf3" }}
-                    onFocus={e => e.target.style.borderColor = "#00E6A8"}
-                    onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.08)"}
-                  />
-
-                  {/* Filter toggle */}
-                  <button onClick={() => setShowFilter(f => !f)}
-                    className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-xs font-semibold"
-                    style={{ background: showFilter ? "rgba(0,230,168,0.1)" : "#161d28", color: showFilter ? "#00E6A8" : "#9CA3AF", border: showFilter ? "1px solid rgba(0,230,168,0.3)" : "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>
-                    <SlidersHorizontal size={13} />
-                    <span className="hidden sm:inline">Filter</span>
-                    {Object.values(traitSelected).flat().length > 0 && (
-                      <span className="text-[10px] px-1 rounded" style={{ background: "#00E6A8", color: "#0A0F14" }}>
-                        {Object.values(traitSelected).flat().length}
-                      </span>
-                    )}
-                  </button>
-
-                  {/* Price sort — Listings tab only */}
-                  {tab === "Listings" && (
-                    <button onClick={() => setPriceSort(s => s === "asc" ? "desc" : "asc")}
-                      className="flex items-center gap-1 px-3 h-9 rounded-xl text-xs font-semibold"
-                      style={{ background: "#161d28", color: "#9CA3AF", border: "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>
-                      Price {priceSort === "asc" ? "↑" : "↓"}
-                    </button>
+          {/* ── TABS row (tabs only, no toolbar here) ── */}
+          <div className="border-b" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
+            <div className="flex gap-0 overflow-x-auto">
+              {TABS.map(t => (
+                <button key={t} onClick={() => setTab(t)}
+                  className="flex items-center gap-1.5 px-4 pb-4 text-sm font-medium uppercase tracking-widest whitespace-nowrap transition-all"
+                  style={{ background: "none", border: "none", borderBottom: tab === t ? "2px solid #00E6A8" : "2px solid transparent", color: tab === t ? "#00E6A8" : "#9CA3AF", cursor: "pointer" }}>
+                  {t === "Analytics" && <BarChart2 size={13} />}
+                  {t === "Owners"    && <Users size={13} />}
+                  {t}
+                  {t === "Listings" && activeListings.length > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md ml-0.5"
+                      style={{ background: "rgba(0,230,168,0.12)", color: "#00E6A8" }}>
+                      {activeListings.length}
+                    </span>
                   )}
-
-                  {/* Single cycle view toggle */}
-                  <ViewToggle current={viewMode} onChange={setViewMode} />
-                </div>
-              )}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* Content */}
-          <div className={showSidebar ? "flex gap-6" : ""}>
+          {/* ── TOOLBAR row — below tabs, only for Items + Listings ── */}
+          {(tab === "Items" || tab === "Listings") && (
+            <div className="flex items-center gap-2 py-4 flex-wrap">
+              {/* Live dot */}
+              <div className="flex items-center gap-1.5 mr-1">
+                <div className="w-2 h-2 rounded-full animate-pulse"
+                  style={{ background: liveFlash ? "#22C55E" : "#00E6A8", boxShadow: liveFlash ? "0 0 6px #22C55E" : "none", transition: "all 0.3s" }} />
+                <span className="text-[10px] font-medium" style={{ color: "#9CA3AF" }}>Live</span>
+              </div>
 
-            {/* Sidebar filter */}
+              {/* Search */}
+              <div className="relative flex-1 min-w-[160px] max-w-xs">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" size={13} style={{ color: "#9CA3AF" }} />
+                <input
+                  type="text"
+                  placeholder="Search by name or ID..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="h-9 w-full pl-8 pr-3 rounded-xl text-xs outline-none"
+                  style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.08)", color: "#e6edf3" }}
+                  onFocus={e => e.target.style.borderColor = "#00E6A8"}
+                  onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.08)"}
+                />
+              </div>
+
+              {/* Filter — Items tab only */}
+              {tab === "Items" && (
+                <button onClick={() => setShowFilter(f => !f)}
+                  className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-xs font-semibold"
+                  style={{ background: showFilter ? "rgba(0,230,168,0.1)" : "#161d28", color: showFilter ? "#00E6A8" : "#9CA3AF", border: showFilter ? "1px solid rgba(0,230,168,0.3)" : "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>
+                  <SlidersHorizontal size={13} />
+                  Filter
+                  {Object.values(traitSelected || {}).flat().length > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md"
+                      style={{ background: "#00E6A8", color: "#0A0F14" }}>
+                      {Object.values(traitSelected).flat().length}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {/* Price sort — Listings only */}
+              {tab === "Listings" && (
+                <button onClick={() => setPriceSort(s => s === "asc" ? "desc" : "asc")}
+                  className="flex items-center gap-1 px-3 h-9 rounded-xl text-xs font-semibold"
+                  style={{ background: "#161d28", color: "#9CA3AF", border: "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>
+                  Price {priceSort === "asc" ? "↑ Low → High" : "↓ High → Low"}
+                </button>
+              )}
+
+              {/* View toggle — always last */}
+              <div className="ml-auto">
+                <ViewToggle current={viewMode} onChange={setViewMode} />
+              </div>
+            </div>
+          )}
+
+          {/* ── Content ── */}
+          <div className={showSidebar ? "flex gap-6 mt-2" : "mt-2"}>
+
+            {/* Sidebar trait filter — Items tab only */}
             {showSidebar && (
               <TraitFilter
                 traits={collectionTraits}
@@ -689,30 +714,40 @@ export default function CollectionPage() {
 
             <div className="flex-1 min-w-0">
 
-              {/* ── Items Tab ── */}
+              {/* Items Tab */}
               {tab === "Items" && (
                 <>
                   <div className={gridClass}>
-                    {filteredListings.map((token, i) => (
-                      <NFTCard key={`listed-${token.token_id}`} token={token} collectionName={collection?.name}
-                        slug={id} listing={activeListings[i]} viewMode={viewMode} onBuy={setBuyModal} />
+                    {filteredListedForItems.map((token, i) => (
+                      <ItemCard key={`listed-${token.token_id}`}
+                        token={token}
+                        collectionName={collection?.name}
+                        slug={id}
+                        listing={activeListings.find(l => String(l.token_id) === String(token.token_id))}
+                        viewMode={viewMode}
+                      />
                     ))}
                     {filteredUnlisted.map(token => (
-                      <NFTCard key={`unlisted-${token.tokenId}`} token={token} collectionName={collection?.name}
-                        slug={id} listing={null} viewMode={viewMode} onBuy={null} />
+                      <ItemCard key={`unlisted-${token.tokenId}`}
+                        token={token}
+                        collectionName={collection?.name}
+                        slug={id}
+                        listing={null}
+                        viewMode={viewMode}
+                      />
                     ))}
                     {tokensLoading && Array(8).fill(0).map((_, i) => <CardSkeleton key={`sk-${i}`} />)}
                   </div>
                   <div ref={loaderRef} className="h-10" />
-                  {!hasMore && (filteredUnlisted.length + filteredListings.length) > 0 && (
+                  {!hasMore && (filteredUnlisted.length + filteredListedForItems.length) > 0 && (
                     <div className="text-center py-8 text-sm" style={{ color: "#9CA3AF" }}>
-                      All {filteredUnlisted.length + filteredListings.length} items loaded
+                      All {filteredUnlisted.length + filteredListedForItems.length} items loaded
                     </div>
                   )}
                 </>
               )}
 
-              {/* ── Listings Tab ── */}
+              {/* Listings Tab — ONLY active listed NFTs */}
               {tab === "Listings" && (
                 <>
                   {listingsLoading ? (
@@ -726,13 +761,22 @@ export default function CollectionPage() {
                       <p className="text-sm" style={{ color: "#9CA3AF" }}>Be the first to list an NFT from this collection.</p>
                     </div>
                   ) : (
-                    <div className={gridClass}>
-                      {filteredListings.map(listing => (
-                        <ListingCard key={listing.listing_id} listing={listing}
-                          collectionName={collection?.name} slug={id}
-                          viewMode={viewMode} onBuy={setBuyModal} />
-                      ))}
-                    </div>
+                    <>
+                      <p className="text-sm mb-4" style={{ color: "#9CA3AF" }}>
+                        <span className="font-bold" style={{ color: "#EDEDED" }}>{filteredListings.length}</span> listing{filteredListings.length !== 1 ? "s" : ""} — {priceSort === "asc" ? "cheapest first" : "most expensive first"}
+                      </p>
+                      <div className={gridClass}>
+                        {filteredListings.map(listing => (
+                          <ListingCard
+                            key={listing.listing_id}
+                            listing={listing}
+                            slug={id}
+                            viewMode={viewMode}
+                            onBuy={setBuyModal}
+                          />
+                        ))}
+                      </div>
+                    </>
                   )}
                 </>
               )}
@@ -760,9 +804,9 @@ export default function CollectionPage() {
           listing={buyModal}
           onClose={() => setBuyModal(null)}
           onSuccess={() => {
-            setBuyModal(null);
             // ✅ Immediately remove bought listing from UI
             setListedTokensWithImages(prev => prev.filter(t => t.listing_id !== buyModal.listing_id));
+            setBuyModal(null);
           }}
         />
       )}
