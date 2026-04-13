@@ -12,7 +12,7 @@ import LaunchpadPage from "./pages/LaunchpadPage.jsx";
 import MintPage from "./pages/MintPage.jsx";
 import NFTItemPage from "./pages/NFTItemPage.jsx";
 import PortfolioPage from "./pages/PortfolioPage.jsx";
-import ManagePage from "./pages/ManagePage.jsx";
+import ApplicationPage from "./pages/ApplicationPage.jsx";
 import AdminPage from "./pages/AdminPage.jsx";
 
 // Context
@@ -61,7 +61,7 @@ export default function App() {
                     <Route path="/launchpad" element={<LaunchpadPage />} />
                     <Route path="/launchpad/:slug" element={<MintPage />} />
                     <Route path="/portfolio" element={<PortfolioPage />} />
-                    <Route path="/manage" element={<ManagePage />} />
+                    <Route path="/applocation" element={<ApplicationPage />} />
                     <Route path="/admin" element={<AdminPage />} />
                   </Routes>
                 </Layout>
