@@ -342,23 +342,24 @@ export default function LaunchpadPage() {
     <div className="fade-up px-4 sm:px-6 max-w-6xl mx-auto py-8" style={{ minHeight: "100vh" }}>
 
       {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Rocket size={18} style={{ color: "#22d3ee" }} />
-              <span className="text-xs font-bold tracking-widest uppercase" style={{ color: "#22d3ee" }}>Launchpad</span>
-            </div>
-            <h1 className="text-3xl font-extrabold mb-1" style={{ color: "#e6edf3" }}>NFT Drops</h1>
-            <p className="text-sm" style={{ color: "#9da7b3" }}>Discover and mint collections launching on Tempo Chain.</p>
-          </div>
-          <button onClick={() => navigate("/manage")}
-            className="hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold"
-            style={{ background: "rgba(34,211,238,0.08)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.25)", cursor: "pointer" }}>
-            Apply to Launch <ArrowRight size={13} />
-          </button>
-        </div>
+<div className="mb-8">
+  <div className="flex items-center justify-between">
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <Rocket size={18} style={{ color: "#22c55e" }} /> {/* Changed to Green */}
+        <span className="text-xs font-bold tracking-widest uppercase" style={{ color: "#22c55e" }}>Launchpad</span>
       </div>
+      <h1 className="text-3xl font-extrabold mb-1" style={{ color: "#e6edf3" }}>NFT Drops</h1>
+      <p className="text-sm" style={{ color: "#9da7b3" }}>Discover and mint collections launching on Tempo Chain.</p>
+    </div>
+    {/* Corrected path to /application and color to Green */}
+    <button onClick={() => navigate("/application")}
+      className="hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold"
+      style={{ background: "rgba(34,197,94,0.08)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.25)", cursor: "pointer" }}>
+      Apply to Launch <ArrowRight size={13} />
+    </button>
+  </div>
+</div>
 
       {/* Error */}
       {error && (
@@ -427,30 +428,28 @@ export default function LaunchpadPage() {
       )}
 
       {/* Bottom CTA */}
-      {!isLoading && (
-        <div className="mt-12 rounded-2xl p-8 text-center relative overflow-hidden"
-          style={{ background: "#0d1219", border: "1px solid rgba(34,211,238,0.15)" }}>
-          <div className="absolute inset-0 pointer-events-none"
-            style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(34,211,238,0.06) 0%, transparent 70%)" }} />
-          <Rocket size={32} className="mx-auto mb-3" style={{ color: "#22d3ee" }} />
-          <h3 className="font-extrabold text-lg mb-2" style={{ color: "#e6edf3" }}>Launch Your Collection</h3>
-          <p className="text-sm mb-5 max-w-sm mx-auto" style={{ color: "#9da7b3" }}>
-            Apply to list your NFT project on the Tempo Launchpad. Multi-phase minting, allowlist support, and more.
-          </p>
-          <div className="flex items-center justify-center gap-3">
-            <button onClick={() => navigate("/manage")}
-              className="h-10 px-6 rounded-xl text-sm font-bold"
-              style={{ background: "#22d3ee", color: "#0b0f14", border: "none", cursor: "pointer" }}>
-              Apply Now
-            </button>
-            <button onClick={() => navigate("/launchpad/guide")}
-              className="h-10 px-6 rounded-xl text-sm font-bold"
-              style={{ background: "transparent", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.3)", cursor: "pointer" }}>
-              Read the Guide
-            </button>
-          </div>
-        </div>
-      )}
+{!isLoading && (
+  <div className="mt-12 rounded-2xl p-8 text-center relative overflow-hidden"
+    style={{ background: "#0d1219", border: "1px solid rgba(34,197,94,0.15)" }}> {/* Border to Green */}
+    <div className="absolute inset-0 pointer-events-none"
+      style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(34,197,94,0.06) 0%, transparent 70%)" }} /> {/* Glow to Green */}
+    <Rocket size={32} className="mx-auto mb-3" style={{ color: "#22c55e" }} />
+    <h3 className="font-extrabold text-lg mb-2" style={{ color: "#e6edf3" }}>Launch Your Collection</h3>
+    <p className="text-sm mb-5 max-w-sm mx-auto" style={{ color: "#9da7b3" }}>
+      Apply to list your NFT project on the Tempo Launchpad. Multi-phase minting, allowlist support, and more.
+    </p>
+    <div className="flex items-center justify-center gap-3">
+      {/* Primary Green Button */}
+      <button onClick={() => navigate("/application")}
+        className="h-10 px-6 rounded-xl text-sm font-bold"
+        style={{ background: "#22c55e", color: "#0b0f14", border: "none", cursor: "pointer" }}>
+        Apply Now
+      </button>
+      <button onClick={() => navigate("/launchpad/guide")}
+        className="h-10 px-6 rounded-xl text-sm font-bold"
+        style={{ background: "transparent", color: "#22c55e", border: "1px solid rgba(34,197,94,0.3)", cursor: "pointer" }}>
+        Read the Guide
+      </button>
     </div>
-  );
-}
+  </div>
+)}
