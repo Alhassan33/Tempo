@@ -3,7 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   CheckCircle2, ExternalLink, Twitter, Globe, MessageCircle,
   TrendingDown, TrendingUp, Square, Grid2X2, List as ListIcon,
-  BarChart2, ChevronDown, ChevronUp, SlidersHorizontal, X, Users, Search
+  BarChart2, ChevronDown, ChevronUp, SlidersHorizontal, X, Users, Search,
+  AlertCircle
 } from "lucide-react";
 import { useCollection, useRealtimeListings, useCollectionStats } from "@/hooks/useSupabase";
 import { supabase } from "@/lib/supabase";
@@ -21,6 +22,8 @@ const VIEW      = { SINGLE: "single", GRID: "grid", LIST: "list" };
 const CYCLE     = [VIEW.GRID, VIEW.LIST, VIEW.SINGLE];
 const VIEW_LABEL = { [VIEW.SINGLE]: "Single", [VIEW.GRID]: "Grid", [VIEW.LIST]: "List" };
 const VIEW_ICON  = { [VIEW.SINGLE]: Square, [VIEW.GRID]: Grid2X2, [VIEW.LIST]: ListIcon };
+const MARKETPLACE_LOWER = "0x218ab916fe8d7a1ca87d7cd5dfb1d44684ab926b";
+const ZERO_ADDR         = "0x0000000000000000000000000000000000000000";
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 const StatItem = ({ label, value, subValue, isTrend }) => (
@@ -39,20 +42,14 @@ const StatItem = ({ label, value, subValue, isTrend }) => (
   </div>
 );
 
-// ─── Single cycle view toggle ──────────────────────────────────────────────────
+// ─── View toggle ──────────────────────────────────────────────────────────────
 function ViewToggle({ current, onChange }) {
   const Icon = VIEW_ICON[current] || Grid2X2;
-  function cycle() {
-    const idx  = CYCLE.indexOf(current);
-    const next = CYCLE[(idx + 1) % CYCLE.length];
-    onChange(next);
-  }
   return (
-    <button onClick={cycle} title={`Switch view`}
+    <button onClick={() => { const idx = CYCLE.indexOf(current); onChange(CYCLE[(idx + 1) % CYCLE.length]); }}
       className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-xs font-semibold"
       style={{ background: "rgba(0,230,168,0.08)", color: "#00E6A8", border: "1px solid rgba(0,230,168,0.2)", cursor: "pointer" }}>
-      <Icon size={14} />
-      {VIEW_LABEL[current]}
+      <Icon size={14} /> {VIEW_LABEL[current]}
     </button>
   );
 }
@@ -60,20 +57,16 @@ function ViewToggle({ current, onChange }) {
 // ─── Trait Filter ─────────────────────────────────────────────────────────────
 function TraitFilter({ traits, selected, onChange, onClear }) {
   const [open, setOpen] = useState({});
-
-  // ✅ Guard: if traits is empty or invalid, render nothing
   const keys = useMemo(() => Object.keys(traits || {}), [traits]);
-  if (!keys.length) return (
-    <div className="w-52 flex-shrink-0">
-      <p className="text-xs text-center py-8" style={{ color: "#6B7280" }}>
-        Traits load as items are displayed
-      </p>
-    </div>
-  );
-
-  // ✅ Guard: ensure selected is always an object
   const safeSelected = selected || {};
   const totalSelected = Object.values(safeSelected).flat().length;
+
+  if (!keys.length) return (
+    <div className="w-52 flex-shrink-0 rounded-2xl p-4 text-center"
+      style={{ background: "#11161D", border: "1px solid rgba(255,255,255,0.05)" }}>
+      <p className="text-xs" style={{ color: "#6B7280" }}>Traits load as items are browsed</p>
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-2 w-52 flex-shrink-0">
@@ -82,7 +75,7 @@ function TraitFilter({ traits, selected, onChange, onClear }) {
         {totalSelected > 0 && (
           <button onClick={onClear} className="flex items-center gap-1 text-xs"
             style={{ color: "#EF4444", background: "none", border: "none", cursor: "pointer" }}>
-            <X size={11} /> Clear all
+            <X size={11} /> Clear
           </button>
         )}
       </div>
@@ -93,7 +86,7 @@ function TraitFilter({ traits, selected, onChange, onClear }) {
         return (
           <div key={trait} className="rounded-xl overflow-hidden"
             style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.06)" }}>
-            <button className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold"
+            <button className="w-full flex items-center justify-between px-3 py-2.5 text-xs font-semibold"
               style={{ color: "#e6edf3", background: "none", border: "none", cursor: "pointer" }}
               onClick={() => setOpen(p => ({ ...p, [trait]: !p[trait] }))}>
               <span className="truncate mr-2">{trait}</span>
@@ -104,7 +97,7 @@ function TraitFilter({ traits, selected, onChange, onClear }) {
                     {selectedVals.length}
                   </span>
                 )}
-                {isOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               </div>
             </button>
             {isOpen && (
@@ -115,14 +108,12 @@ function TraitFilter({ traits, selected, onChange, onClear }) {
                     <label key={value} className="flex items-center gap-2 cursor-pointer text-xs">
                       <input type="checkbox" checked={checked}
                         onChange={() => {
-                          const next = checked
-                            ? selectedVals.filter(v => v !== value)
-                            : [...selectedVals, value];
+                          const next = checked ? selectedVals.filter(v => v !== value) : [...selectedVals, value];
                           onChange({ ...safeSelected, [trait]: next });
                         }}
                         style={{ accentColor: "#00E6A8" }} />
                       <span className="flex-1 truncate" style={{ color: "#e6edf3" }}>{value}</span>
-                      <span className="flex-shrink-0" style={{ color: "#9CA3AF" }}>{count}</span>
+                      <span className="flex-shrink-0 text-[10px]" style={{ color: "#9CA3AF" }}>{count}</span>
                     </label>
                   );
                 })}
@@ -135,35 +126,27 @@ function TraitFilter({ traits, selected, onChange, onClear }) {
   );
 }
 
-// ─── Items NFT Card (no buy button) ──────────────────────────────────────────
-function ItemCard({ token, collectionName, slug, listing, viewMode }) {
-  const navigate     = useNavigate();
-  const isListed     = !!listing;
-  const displayPrice = listing ? (Number(listing.price) / 1e6).toFixed(2) : null;
-  const tokenId      = token.tokenId || token.token_id;
-  // ✅ Always prefer IPFS metadata name, fall back to collection#id
-  const name         = token.name || `${collectionName} #${tokenId}`;
-  const imgSrc       = token.image || "";
+// ─── Item Card (unlisted only — no buy button) ────────────────────────────────
+function ItemCard({ token, slug, viewMode }) {
+  const navigate = useNavigate();
+  const tokenId  = token.tokenId || token.token_id;
+  const name     = token.name || `#${tokenId}`;
+  const imgSrc   = token.image || "";
 
   if (viewMode === VIEW.LIST) {
     return (
       <div onClick={() => navigate(`/collection/${slug}/${tokenId}`)}
         className="flex items-center gap-4 p-3 rounded-xl cursor-pointer transition-all"
-        style={{ background: "#11161D", border: isListed ? "1px solid rgba(0,230,168,0.2)" : "1px solid rgba(255,255,255,0.05)" }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(0,230,168,0.35)"; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = isListed ? "rgba(0,230,168,0.2)" : "rgba(255,255,255,0.05)"; }}>
+        style={{ background: "#11161D", border: "1px solid rgba(255,255,255,0.05)" }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(0,230,168,0.2)"; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.05)"; }}>
         <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0" style={{ background: "#161d28" }}>
           {imgSrc ? <img src={imgSrc} alt="" className="w-full h-full object-cover" onError={e => { e.target.style.display = "none"; }} />
             : <div className="w-full h-full animate-pulse" style={{ background: "#1a2232" }} />}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-bold truncate" style={{ color: "#EDEDED" }}>{name}</div>
-          <div className="text-[10px]" style={{ color: "#6B7280" }}>#{tokenId}</div>
-        </div>
-        <div className="text-right flex-shrink-0">
-          {isListed
-            ? <div className="font-mono text-sm font-bold" style={{ color: "#00E6A8" }}>{displayPrice} USD</div>
-            : <span className="text-xs" style={{ color: "#6B7280" }}>Not listed</span>}
+          <div className="text-sm font-bold truncate" style={{ color: "#EDEDED" }}>{name}</div>
+          <div className="text-[10px]" style={{ color: "#6B7280" }}>#{tokenId} · Not listed</div>
         </div>
       </div>
     );
@@ -171,29 +154,21 @@ function ItemCard({ token, collectionName, slug, listing, viewMode }) {
 
   return (
     <div onClick={() => navigate(`/collection/${slug}/${tokenId}`)}
-      className="group rounded-2xl overflow-hidden cursor-pointer relative"
-      style={{ background: "#11161D", border: isListed ? "1px solid rgba(0,230,168,0.2)" : "1px solid rgba(255,255,255,0.05)", transition: "all 0.2s" }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(0,230,168,0.4)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = isListed ? "rgba(0,230,168,0.2)" : "rgba(255,255,255,0.05)"; e.currentTarget.style.transform = "translateY(0)"; }}>
-      <div className="relative aspect-square overflow-hidden" style={{ background: "#161d28" }}>
+      className="group rounded-2xl overflow-hidden cursor-pointer"
+      style={{ background: "#11161D", border: "1px solid rgba(255,255,255,0.05)", transition: "all 0.2s" }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.05)"; e.currentTarget.style.transform = "translateY(0)"; }}>
+      <div className="aspect-square overflow-hidden" style={{ background: "#161d28" }}>
         {imgSrc
           ? <img src={imgSrc} alt={name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" onError={e => { e.target.style.display = "none"; }} />
           : <div className="w-full h-full flex items-center justify-center">
               <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "#00E6A8", borderTopColor: "transparent" }} />
             </div>}
-        {isListed && (
-          <div className="absolute top-2 left-2 text-[9px] font-bold px-2 py-0.5 rounded-lg"
-            style={{ background: "rgba(10,15,20,0.9)", color: "#00E6A8", border: "1px solid rgba(0,230,168,0.4)", backdropFilter: "blur(4px)" }}>
-            ● Listed
-          </div>
-        )}
       </div>
       <div className="p-3">
         <div className="text-sm font-bold truncate mb-1" style={{ color: "#EDEDED" }}>{name}</div>
         <div className="flex items-center justify-between">
-          {isListed
-            ? <span className="font-mono text-sm font-bold" style={{ color: "#00E6A8" }}>{displayPrice} USD</span>
-            : <span className="text-xs" style={{ color: "#6B7280" }}>Not listed</span>}
+          <span className="text-xs" style={{ color: "#6B7280" }}>Not listed</span>
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.04)", color: "#6B7280" }}>#{tokenId}</span>
         </div>
       </div>
@@ -201,12 +176,11 @@ function ItemCard({ token, collectionName, slug, listing, viewMode }) {
   );
 }
 
-// ─── Listings tab card (with buy) ─────────────────────────────────────────────
+// ─── Listing Card (with buy button) ──────────────────────────────────────────
 function ListingCard({ listing, slug, viewMode, onBuy }) {
   const navigate     = useNavigate();
   const displayPrice = (Number(listing.price) / 1e6).toFixed(2);
   const tokenId      = listing.token_id;
-  // ✅ Always use the name from IPFS metadata (stored in listing.name after enrichment)
   const name         = listing.name || `#${tokenId}`;
   const imgSrc       = listing.image || "";
 
@@ -244,7 +218,6 @@ function ListingCard({ listing, slug, viewMode, onBuy }) {
           : <div className="w-full h-full flex items-center justify-center">
               <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "#00E6A8", borderTopColor: "transparent" }} />
             </div>}
-        {/* Buy slides up on hover */}
         <button
           className="buy-slide absolute bottom-0 left-0 right-0 flex items-center justify-center gap-1.5 py-3 font-bold text-sm"
           style={{ background: "linear-gradient(to top, rgba(0,230,168,0.97), rgba(0,230,168,0.85))", color: "#0A0F14", transform: "translateY(100%)", transition: "transform 0.25s cubic-bezier(0.4,0,0.2,1)", border: "none", cursor: "pointer" }}
@@ -263,94 +236,207 @@ function ListingCard({ listing, slug, viewMode, onBuy }) {
   );
 }
 
-// ─── Owners Tab ───────────────────────────────────────────────────────────────
-function OwnersTab({ contractAddress }) {
-  const [owners,  setOwners]  = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [sortAsc, setSortAsc] = useState(false);
+// ─── Owners Tab — reads directly from nfts table ──────────────────────────────
+function OwnersTab({ contractAddress, totalSupply }) {
+  const [owners,    setOwners]    = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState(null);
+  const [sortAsc,   setSortAsc]   = useState(false);
+  const [search,    setSearch]    = useState("");
 
   useEffect(() => {
     if (!contractAddress) return;
+    setLoading(true);
+    setError(null);
+
     async function load() {
-      setLoading(true);
-      const { data } = await supabase
-        .from("nfts")
-        .select("owner_address, token_id")
-        .eq("contract_address", contractAddress.toLowerCase())
-        .neq("owner_address", "0x0000000000000000000000000000000000000000")
-        .neq("owner_address", "0x218ab916fe8d7a1ca87d7cd5dfb1d44684ab926b");
+      try {
+        // Paginate through ALL nft rows for this contract (Supabase default limit is 1000)
+        let allRows = [];
+        let from = 0;
+        const batchSize = 1000;
 
-      const map = {};
-      (data || []).forEach(n => {
-        const addr = n.owner_address?.toLowerCase();
-        if (addr) map[addr] = (map[addr] || 0) + 1;
-      });
+        while (true) {
+          const { data, error: dbErr } = await supabase
+            .from("nfts")
+            .select("owner_address, token_id")
+            .eq("contract_address", contractAddress.toLowerCase())
+            .range(from, from + batchSize - 1);
 
-      setOwners(Object.entries(map).map(([address, count]) => ({ address, count })).sort((a, b) => b.count - a.count));
-      setLoading(false);
+          if (dbErr) throw dbErr;
+          if (!data || data.length === 0) break;
+          allRows = [...allRows, ...data];
+          if (data.length < batchSize) break;
+          from += batchSize;
+        }
+
+        // Count per owner — exclude burn + marketplace addresses
+        const map = {};
+        allRows.forEach(n => {
+          const addr = n.owner_address?.toLowerCase();
+          if (!addr) return;
+          if (addr === ZERO_ADDR) return;
+          if (addr === MARKETPLACE_LOWER) return;
+          map[addr] = (map[addr] || 0) + 1;
+        });
+
+        const result = Object.entries(map)
+          .map(([address, count]) => ({ address, count }))
+          .sort((a, b) => b.count - a.count);
+
+        setOwners(result);
+      } catch (e) {
+        console.error("[OwnersTab]", e);
+        setError(e.message || "Failed to load owners");
+      } finally {
+        setLoading(false);
+      }
     }
+
     load();
   }, [contractAddress]);
 
-  const sorted = sortAsc ? [...owners].sort((a, b) => a.count - b.count) : owners;
+  const filteredSorted = useMemo(() => {
+    let list = sortAsc ? [...owners].sort((a, b) => a.count - b.count) : owners;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(o => o.address.toLowerCase().includes(q));
+    }
+    return list;
+  }, [owners, sortAsc, search]);
+
+  const topHolder    = owners[0]?.count || 0;
+  const totalIndexed = owners.reduce((s, o) => s + o.count, 0);
 
   if (loading) return (
-    <div className="flex items-center justify-center py-16">
-      <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "#00E6A8", borderTopColor: "transparent" }} />
+    <div className="flex flex-col items-center justify-center py-16 gap-3">
+      <div className="w-7 h-7 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "#00E6A8", borderTopColor: "transparent" }} />
+      <span className="text-sm" style={{ color: "#9CA3AF" }}>Loading owners from Supabase...</span>
+    </div>
+  );
+
+  if (error) return (
+    <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm"
+      style={{ background: "rgba(239,68,68,0.1)", color: "#EF4444", border: "1px solid rgba(239,68,68,0.2)" }}>
+      <AlertCircle size={14} /> {error}
+    </div>
+  );
+
+  if (!owners.length) return (
+    <div className="py-24 text-center rounded-3xl" style={{ border: "1px dashed rgba(255,255,255,0.06)" }}>
+      <Users size={32} className="mx-auto mb-3" style={{ color: "rgba(0,230,168,0.3)" }} />
+      <div className="font-bold mb-1" style={{ color: "#EDEDED" }}>No ownership data yet</div>
+      <p className="text-sm" style={{ color: "#9CA3AF" }}>
+        The indexer hasn't synced NFT ownership for this collection yet.
+      </p>
     </div>
   );
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-sm" style={{ color: "#9CA3AF" }}>
-          <span className="font-bold" style={{ color: "#EDEDED" }}>{owners.length}</span> unique owners
-        </span>
-        <button onClick={() => setSortAsc(s => !s)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
-          style={{ background: "rgba(255,255,255,0.04)", color: "#9CA3AF", border: "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>
-          Count {sortAsc ? "↑" : "↓"}
-        </button>
-      </div>
-      <div className="space-y-2">
-        {sorted.map((owner, i) => (
-          <div key={owner.address} className="flex items-center gap-3 p-3 rounded-xl"
+      {/* Summary stats */}
+      <div className="grid grid-cols-3 gap-3 mb-5">
+        {[
+          { label: "Unique Owners",  value: owners.length.toLocaleString() },
+          { label: "NFTs Indexed",   value: totalIndexed.toLocaleString() },
+          { label: "Top Holder",     value: `${topHolder} NFTs` },
+        ].map(({ label, value }) => (
+          <div key={label} className="rounded-2xl p-3 text-center"
             style={{ background: "#11161D", border: "1px solid rgba(255,255,255,0.05)" }}>
-            <span className="text-xs font-mono w-6 text-center flex-shrink-0" style={{ color: "#6B7280" }}>{i + 1}</span>
-            <a href={`${EXPLORER}/address/${owner.address}`} target="_blank" rel="noreferrer"
-              className="flex-1 font-mono text-sm truncate hover:underline" style={{ color: "#22d3ee" }}>
-              {owner.address}
-            </a>
-            <span className="font-mono text-sm font-bold flex-shrink-0" style={{ color: "#EDEDED" }}>
-              {owner.count} <span style={{ color: "#9CA3AF", fontWeight: 400 }}>NFTs</span>
-            </span>
-            <div className="w-16 h-1.5 rounded-full overflow-hidden flex-shrink-0" style={{ background: "rgba(255,255,255,0.06)" }}>
-              <div className="h-full rounded-full" style={{ width: `${(owner.count / (owners[0]?.count || 1)) * 100}%`, background: "#00E6A8" }} />
-            </div>
+            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#9CA3AF" }}>{label}</div>
+            <div className="font-mono font-bold text-base" style={{ color: "#EDEDED" }}>{value}</div>
           </div>
         ))}
       </div>
+
+      {/* Controls */}
+      <div className="flex items-center gap-2 mb-4">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" size={12} style={{ color: "#9CA3AF" }} />
+          <input type="text" placeholder="Search address..."
+            value={search} onChange={e => setSearch(e.target.value)}
+            className="h-9 w-full pl-8 pr-3 rounded-xl text-xs outline-none"
+            style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.08)", color: "#e6edf3" }}
+            onFocus={e => e.target.style.borderColor = "#00E6A8"}
+            onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.08)"} />
+        </div>
+        <button onClick={() => setSortAsc(s => !s)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold"
+          style={{ background: "rgba(255,255,255,0.04)", color: "#9CA3AF", border: "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>
+          Holdings {sortAsc ? "↑ Asc" : "↓ Desc"}
+        </button>
+        <span className="text-xs ml-auto" style={{ color: "#6B7280" }}>
+          {filteredSorted.length} of {owners.length} owners
+        </span>
+      </div>
+
+      {/* Owner list */}
+      <div className="space-y-2">
+        {filteredSorted.map((owner, i) => {
+          const pct = topHolder > 0 ? (owner.count / topHolder) * 100 : 0;
+          const supplyPct = totalSupply > 0 ? ((owner.count / totalSupply) * 100).toFixed(2) : null;
+          return (
+            <div key={owner.address} className="flex items-center gap-3 p-3 rounded-xl group"
+              style={{ background: "#11161D", border: "1px solid rgba(255,255,255,0.05)" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.05)"; }}>
+              {/* Rank */}
+              <span className="text-xs font-mono w-7 text-center flex-shrink-0 font-bold"
+                style={{ color: i === 0 ? "#f59e0b" : i === 1 ? "#9CA3AF" : i === 2 ? "#cd7f32" : "#6B7280" }}>
+                {i + 1}
+              </span>
+              {/* Address */}
+              <a href={`${EXPLORER}/address/${owner.address}`} target="_blank" rel="noreferrer"
+                className="flex-1 font-mono text-sm truncate"
+                style={{ color: "#22d3ee" }}
+                onClick={e => e.stopPropagation()}>
+                {owner.address.slice(0, 6)}…{owner.address.slice(-6)}
+              </a>
+              {/* Supply % */}
+              {supplyPct && (
+                <span className="text-[10px] flex-shrink-0" style={{ color: "#9CA3AF" }}>
+                  {supplyPct}%
+                </span>
+              )}
+              {/* Count */}
+              <span className="font-mono text-sm font-bold flex-shrink-0" style={{ color: "#EDEDED" }}>
+                {owner.count}
+                <span className="text-[10px] font-normal ml-1" style={{ color: "#9CA3AF" }}>NFTs</span>
+              </span>
+              {/* Bar */}
+              <div className="w-20 h-1.5 rounded-full overflow-hidden flex-shrink-0" style={{ background: "rgba(255,255,255,0.06)" }}>
+                <div className="h-full rounded-full transition-all"
+                  style={{ width: `${pct}%`, background: i === 0 ? "#f59e0b" : "#00E6A8" }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {totalSupply > 0 && totalIndexed < totalSupply && (
+        <p className="text-xs mt-4 text-center" style={{ color: "#6B7280" }}>
+          {totalIndexed.toLocaleString()} of {totalSupply.toLocaleString()} NFTs indexed · sync runs every minute
+        </p>
+      )}
     </div>
   );
 }
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function CollectionPage() {
   const { id } = useParams();
-  const [viewMode,       setViewMode]       = useState(VIEW.GRID);
-  const [tab,            setTab]            = useState("Items");
-  const [buyModal,       setBuyModal]       = useState(null);
-  const [liveFlash,      setLiveFlash]      = useState(false);
-  const [traitSelected,  setTraitSelected]  = useState({});
-  const [showFilter,     setShowFilter]     = useState(false);
-  const [search,         setSearch]         = useState("");
-  const [priceSort,      setPriceSort]      = useState("asc");
-  // ✅ collectionTraits must be STATE not a plain object ref — otherwise filter update won't re-render
+  const [viewMode,         setViewMode]         = useState(VIEW.GRID);
+  const [tab,              setTab]              = useState("Items");
+  const [buyModal,         setBuyModal]         = useState(null);
+  const [liveFlash,        setLiveFlash]        = useState(false);
+  const [traitSelected,    setTraitSelected]    = useState({});
+  const [showFilter,       setShowFilter]       = useState(false);
+  const [search,           setSearch]           = useState("");
+  const [priceSort,        setPriceSort]        = useState("asc");
   const [collectionTraits, setCollectionTraits] = useState({});
-  const traitAccumRef = useRef({}); // accumulator ref, only converts to state after each page
+  const traitAccumRef = useRef({});
 
   const { collection, isLoading: colLoading } = useCollection(id);
-  const { stats: rpcStats }  = useCollectionStats(collection?.contract_address || "");
+  const { stats: rpcStats } = useCollectionStats(collection?.contract_address || "");
   const contractAddr = collection?.contract_address?.toLowerCase();
   const { listings, isLoading: listingsLoading } = useRealtimeListings(contractAddr);
 
@@ -360,9 +446,9 @@ export default function CollectionPage() {
     ),
   [listings, priceSort]);
 
+  // ✅ Listed token IDs — used to EXCLUDE from Items tab
   const listedIds = useMemo(() => new Set(activeListings.map(l => String(l.token_id))), [activeListings]);
 
-  // ✅ listedTokensWithImages — always fetched from IPFS for correct names/images
   const [listedTokensWithImages, setListedTokensWithImages] = useState([]);
   const [unlistedTokens,  setUnlistedTokens]  = useState([]);
   const [tokensLoading,   setTokensLoading]   = useState(false);
@@ -373,12 +459,12 @@ export default function CollectionPage() {
   // Realtime flash
   useEffect(() => {
     if (!contractAddr) return;
-    const channel = supabase
+    const ch = supabase
       .channel(`col-live:${contractAddr}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "listings", filter: `nft_contract=eq.${contractAddr}` },
         () => { setLiveFlash(true); setTimeout(() => setLiveFlash(false), 1500); })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase.removeChannel(ch); };
   }, [contractAddr]);
 
   const stats = useMemo(() => {
@@ -394,10 +480,11 @@ export default function CollectionPage() {
       vol24h:    collection?.volume_24h   ? `${(Number(collection.volume_24h)   / 1e6).toFixed(2)} USD` : "0 USD",
       totalVol:  collection?.volume_total ? `${(Number(collection.volume_total) / 1e6).toFixed(2)} USD` : "0 USD",
       mktCap:    floorDisplay && supply   ? `${((Number(floorRaw) / 1e6) * supply).toLocaleString()} USD` : "—",
-      owners, ownerPct: supply && owners ? `${((owners / supply) * 100).toFixed(1)}%` : "0%",
-      listed, listedPct: supply ? `${((listed / supply) * 100).toFixed(1)}% listed` : "",
-      supply: supply?.toLocaleString() || "0",
-      royalties: royaltyBps ? `${(royaltyBps / 100).toFixed(1)}%` : "0%",
+      owners, ownerPct: supply && owners  ? `${((owners / supply) * 100).toFixed(1)}%` : "0%",
+      listed, listedPct: supply           ? `${((listed / supply) * 100).toFixed(1)}% listed` : "",
+      supply: supply?.toLocaleString()    || "0",
+      royalties: royaltyBps               ? `${(royaltyBps / 100).toFixed(1)}%` : "0%",
+      totalSupplyRaw: supply,
     };
   }, [collection, activeListings, rpcStats]);
 
@@ -409,7 +496,7 @@ export default function CollectionPage() {
     return base;
   }, [collection?.metadata_base_uri]);
 
-  // ✅ Fetch listed tokens — always from IPFS for correct name + image
+  // Fetch listed tokens from IPFS — authoritative name + image
   useEffect(() => {
     if (!ipfsBase || !activeListings.length) { setListedTokensWithImages([]); return; }
     let cancelled = false;
@@ -417,25 +504,15 @@ export default function CollectionPage() {
       try {
         const res  = await fetch(`${ipfsBase}${listing.token_id}.json`, { cache: "force-cache" });
         const json = await res.json();
-        return {
-          ...listing,
-          tokenId: String(listing.token_id),
-          // ✅ Always use json.name — this is the authoritative name from metadata
-          name:    json.name || `${collection?.name} #${listing.token_id}`,
-          image:   extractImageUrl(json) || listing.image || listing.image_url || "",
-        };
+        return { ...listing, tokenId: String(listing.token_id), name: json.name || `#${listing.token_id}`, image: extractImageUrl(json) || "" };
       } catch {
-        return {
-          ...listing,
-          tokenId: String(listing.token_id),
-          name:    listing.name || `${collection?.name} #${listing.token_id}`,
-          image:   listing.image || listing.image_url || "",
-        };
+        return { ...listing, tokenId: String(listing.token_id), name: listing.name || `#${listing.token_id}`, image: listing.image || "" };
       }
-    })).then(results => { if (!cancelled) setListedTokensWithImages(results); });
+    })).then(r => { if (!cancelled) setListedTokensWithImages(r); });
     return () => { cancelled = true; };
-  }, [activeListings, ipfsBase, collection?.name]);
+  }, [activeListings, ipfsBase]);
 
+  // Fetch unlisted tokens — skip any that are in listedIds
   const fetchPage = useCallback(async (pageNum) => {
     if (!ipfsBase) return;
     const supply = rpcStats.totalSupply || collection?.total_supply || 2000;
@@ -446,6 +523,7 @@ export default function CollectionPage() {
 
     const results = await Promise.all(
       Array.from({ length: end - start + 1 }, (_, i) => start + i).map(async tokenId => {
+        // ✅ Skip listed tokens — they show in Listings tab only
         if (listedIds.has(String(tokenId))) return null;
         try {
           const res  = await fetch(`${ipfsBase}${tokenId}.json`, { cache: "force-cache" });
@@ -453,7 +531,6 @@ export default function CollectionPage() {
           const image = extractImageUrl(json);
           const attrs = json.attributes || [];
 
-          // Accumulate traits into ref (not state — avoids re-render per token)
           attrs.forEach(a => {
             if (!a.trait_type || a.value === undefined) return;
             const t = a.trait_type;
@@ -462,25 +539,16 @@ export default function CollectionPage() {
             traitAccumRef.current[t][v] = (traitAccumRef.current[t][v] || 0) + 1;
           });
 
-          return {
-            tokenId: String(tokenId),
-            token_id: tokenId,
-            // ✅ Always use json.name
-            name:  json.name || `${collection?.name} #${tokenId}`,
-            image,
-            attributes: attrs,
-          };
+          return { tokenId: String(tokenId), token_id: tokenId, name: json.name || `#${tokenId}`, image, attributes: attrs };
         } catch {
-          return { tokenId: String(tokenId), token_id: tokenId, name: `${collection?.name} #${tokenId}`, image: "", attributes: [] };
+          return { tokenId: String(tokenId), token_id: tokenId, name: `#${tokenId}`, image: "", attributes: [] };
         }
       })
     );
-    // ✅ Convert accumulated traits to state ONCE after page load (not per token)
+
     const traitArr = {};
     Object.entries(traitAccumRef.current).forEach(([trait, vals]) => {
-      traitArr[trait] = Object.entries(vals)
-        .map(([value, count]) => ({ value, count }))
-        .sort((a, b) => b.count - a.count);
+      traitArr[trait] = Object.entries(vals).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count);
     });
     setCollectionTraits(traitArr);
 
@@ -490,14 +558,7 @@ export default function CollectionPage() {
   }, [ipfsBase, collection, listedIds, rpcStats.totalSupply]);
 
   useEffect(() => {
-    if (ipfsBase) {
-      setUnlistedTokens([]);
-      setPage(1);
-      setHasMore(true);
-      traitAccumRef.current = {};
-      setCollectionTraits({});
-      fetchPage(1);
-    }
+    if (ipfsBase) { setUnlistedTokens([]); setPage(1); setHasMore(true); traitAccumRef.current = {}; setCollectionTraits({}); fetchPage(1); }
   }, [ipfsBase, fetchPage]);
 
   const listedCount = listedIds.size;
@@ -516,8 +577,8 @@ export default function CollectionPage() {
     return () => obs.disconnect();
   }, [hasMore, tokensLoading, tab]);
 
-  // Filter + search for Items tab
-  const filteredUnlisted = useMemo(() => {
+  // ✅ Items tab = UNLISTED only, filtered by search + traits
+  const filteredItems = useMemo(() => {
     const safeSelected = traitSelected || {};
     const hasFilter = Object.values(safeSelected).some(v => v?.length > 0);
     const hasSearch = search.trim().length > 0;
@@ -537,21 +598,11 @@ export default function CollectionPage() {
     });
   }, [unlistedTokens, traitSelected, search]);
 
-  const filteredListedForItems = useMemo(() => {
-    if (!search.trim()) return listedTokensWithImages;
-    const q = search.toLowerCase();
-    return listedTokensWithImages.filter(t =>
-      (t.name || "").toLowerCase().includes(q) || String(t.token_id).includes(q)
-    );
-  }, [listedTokensWithImages, search]);
-
-  // Filter for Listings tab — search only (traits not loaded for listed items separately)
+  // ✅ Listings tab = active listings only, filtered by search
   const filteredListings = useMemo(() => {
     if (!search.trim()) return listedTokensWithImages;
     const q = search.toLowerCase();
-    return listedTokensWithImages.filter(t =>
-      (t.name || "").toLowerCase().includes(q) || String(t.token_id).includes(q)
-    );
+    return listedTokensWithImages.filter(t => (t.name || "").toLowerCase().includes(q) || String(t.token_id).includes(q));
   }, [listedTokensWithImages, search]);
 
   const gridClass = useMemo(() => {
@@ -566,12 +617,11 @@ export default function CollectionPage() {
     </div>
   );
 
-  const showSidebar = (tab === "Items") && showFilter && Object.keys(collectionTraits).length > 0;
+  const showSidebar = tab === "Items" && showFilter;
 
   return (
     <>
       <style>{`.nft-card:hover .buy-slide { transform: translateY(0) !important; }`}</style>
-
       <div className="fade-up min-h-screen pb-20" style={{ background: "#0A0F14" }}>
 
         {/* Banner */}
@@ -584,7 +634,7 @@ export default function CollectionPage() {
 
         <div className="px-4 sm:px-6 max-w-7xl mx-auto -mt-16 relative z-10">
 
-          {/* Collection header */}
+          {/* Header */}
           <div className="flex flex-col md:flex-row md:items-end gap-5 mb-8">
             <div className="w-28 h-28 rounded-3xl overflow-hidden flex-shrink-0"
               style={{ border: "4px solid #0A0F14", background: "#11161D" }}>
@@ -621,12 +671,12 @@ export default function CollectionPage() {
             <StatItem label="Royalties"    value={stats.royalties} />
           </div>
 
-          {/* ── TABS row (tabs only, no toolbar here) ── */}
+          {/* ── TABS row only ── */}
           <div className="border-b" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
             <div className="flex gap-0 overflow-x-auto">
               {TABS.map(t => (
-                <button key={t} onClick={() => setTab(t)}
-                  className="flex items-center gap-1.5 px-4 pb-4 text-sm font-medium uppercase tracking-widest whitespace-nowrap transition-all"
+                <button key={t} onClick={() => { setTab(t); setSearch(""); }}
+                  className="flex items-center gap-1.5 px-4 pb-4 text-sm font-medium uppercase tracking-widest whitespace-nowrap"
                   style={{ background: "none", border: "none", borderBottom: tab === t ? "2px solid #00E6A8" : "2px solid transparent", color: tab === t ? "#00E6A8" : "#9CA3AF", cursor: "pointer" }}>
                   {t === "Analytics" && <BarChart2 size={13} />}
                   {t === "Owners"    && <Users size={13} />}
@@ -642,40 +692,36 @@ export default function CollectionPage() {
             </div>
           </div>
 
-          {/* ── TOOLBAR row — below tabs, only for Items + Listings ── */}
+          {/* ── TOOLBAR row — separate from tabs ── */}
           {(tab === "Items" || tab === "Listings") && (
             <div className="flex items-center gap-2 py-4 flex-wrap">
               {/* Live dot */}
-              <div className="flex items-center gap-1.5 mr-1">
+              <div className="flex items-center gap-1.5 mr-1 flex-shrink-0">
                 <div className="w-2 h-2 rounded-full animate-pulse"
                   style={{ background: liveFlash ? "#22C55E" : "#00E6A8", boxShadow: liveFlash ? "0 0 6px #22C55E" : "none", transition: "all 0.3s" }} />
                 <span className="text-[10px] font-medium" style={{ color: "#9CA3AF" }}>Live</span>
               </div>
 
               {/* Search */}
-              <div className="relative flex-1 min-w-[160px] max-w-xs">
+              <div className="relative flex-1 min-w-[160px] max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" size={13} style={{ color: "#9CA3AF" }} />
-                <input
-                  type="text"
-                  placeholder="Search by name or ID..."
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
+                <input type="text" placeholder={tab === "Listings" ? "Search listings..." : "Search items..."}
+                  value={search} onChange={e => setSearch(e.target.value)}
                   className="h-9 w-full pl-8 pr-3 rounded-xl text-xs outline-none"
                   style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.08)", color: "#e6edf3" }}
                   onFocus={e => e.target.style.borderColor = "#00E6A8"}
-                  onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.08)"}
-                />
+                  onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.08)"} />
               </div>
 
-              {/* Filter — Items tab only */}
+              {/* Trait filter toggle — Items only */}
               {tab === "Items" && (
                 <button onClick={() => setShowFilter(f => !f)}
-                  className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-xs font-semibold"
+                  className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-xs font-semibold flex-shrink-0"
                   style={{ background: showFilter ? "rgba(0,230,168,0.1)" : "#161d28", color: showFilter ? "#00E6A8" : "#9CA3AF", border: showFilter ? "1px solid rgba(0,230,168,0.3)" : "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>
                   <SlidersHorizontal size={13} />
                   Filter
                   {Object.values(traitSelected || {}).flat().length > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-md"
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md ml-1"
                       style={{ background: "#00E6A8", color: "#0A0F14" }}>
                       {Object.values(traitSelected).flat().length}
                     </span>
@@ -686,23 +732,22 @@ export default function CollectionPage() {
               {/* Price sort — Listings only */}
               {tab === "Listings" && (
                 <button onClick={() => setPriceSort(s => s === "asc" ? "desc" : "asc")}
-                  className="flex items-center gap-1 px-3 h-9 rounded-xl text-xs font-semibold"
+                  className="flex items-center gap-1 px-3 h-9 rounded-xl text-xs font-semibold flex-shrink-0"
                   style={{ background: "#161d28", color: "#9CA3AF", border: "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>
-                  Price {priceSort === "asc" ? "↑ Low → High" : "↓ High → Low"}
+                  Price {priceSort === "asc" ? "↑" : "↓"}
                 </button>
               )}
 
-              {/* View toggle — always last */}
-              <div className="ml-auto">
+              {/* View toggle — far right */}
+              <div className="ml-auto flex-shrink-0">
                 <ViewToggle current={viewMode} onChange={setViewMode} />
               </div>
             </div>
           )}
 
           {/* ── Content ── */}
-          <div className={showSidebar ? "flex gap-6 mt-2" : "mt-2"}>
+          <div className={showSidebar ? "flex gap-6" : ""}>
 
-            {/* Sidebar trait filter — Items tab only */}
             {showSidebar && (
               <TraitFilter
                 traits={collectionTraits}
@@ -714,40 +759,31 @@ export default function CollectionPage() {
 
             <div className="flex-1 min-w-0">
 
-              {/* Items Tab */}
+              {/* Items — unlisted only */}
               {tab === "Items" && (
                 <>
-                  <div className={gridClass}>
-                    {filteredListedForItems.map((token, i) => (
-                      <ItemCard key={`listed-${token.token_id}`}
-                        token={token}
-                        collectionName={collection?.name}
-                        slug={id}
-                        listing={activeListings.find(l => String(l.token_id) === String(token.token_id))}
-                        viewMode={viewMode}
-                      />
-                    ))}
-                    {filteredUnlisted.map(token => (
-                      <ItemCard key={`unlisted-${token.tokenId}`}
-                        token={token}
-                        collectionName={collection?.name}
-                        slug={id}
-                        listing={null}
-                        viewMode={viewMode}
-                      />
-                    ))}
-                    {tokensLoading && Array(8).fill(0).map((_, i) => <CardSkeleton key={`sk-${i}`} />)}
-                  </div>
+                  {filteredItems.length === 0 && !tokensLoading ? (
+                    <div className="py-16 text-center" style={{ color: "#9CA3AF" }}>
+                      {search ? "No items match your search." : "All items in this collection are listed for sale."}
+                    </div>
+                  ) : (
+                    <div className={gridClass}>
+                      {filteredItems.map(token => (
+                        <ItemCard key={`item-${token.tokenId}`} token={token} slug={id} viewMode={viewMode} />
+                      ))}
+                      {tokensLoading && Array(8).fill(0).map((_, i) => <CardSkeleton key={`sk-${i}`} />)}
+                    </div>
+                  )}
                   <div ref={loaderRef} className="h-10" />
-                  {!hasMore && (filteredUnlisted.length + filteredListedForItems.length) > 0 && (
+                  {!hasMore && filteredItems.length > 0 && (
                     <div className="text-center py-8 text-sm" style={{ color: "#9CA3AF" }}>
-                      All {filteredUnlisted.length + filteredListedForItems.length} items loaded
+                      {filteredItems.length} unlisted items
                     </div>
                   )}
                 </>
               )}
 
-              {/* Listings Tab — ONLY active listed NFTs */}
+              {/* Listings — active listed only */}
               {tab === "Listings" && (
                 <>
                   {listingsLoading ? (
@@ -763,17 +799,11 @@ export default function CollectionPage() {
                   ) : (
                     <>
                       <p className="text-sm mb-4" style={{ color: "#9CA3AF" }}>
-                        <span className="font-bold" style={{ color: "#EDEDED" }}>{filteredListings.length}</span> listing{filteredListings.length !== 1 ? "s" : ""} — {priceSort === "asc" ? "cheapest first" : "most expensive first"}
+                        <span className="font-bold" style={{ color: "#EDEDED" }}>{filteredListings.length}</span> listing{filteredListings.length !== 1 ? "s" : ""} · {priceSort === "asc" ? "cheapest first" : "most expensive first"}
                       </p>
                       <div className={gridClass}>
                         {filteredListings.map(listing => (
-                          <ListingCard
-                            key={listing.listing_id}
-                            listing={listing}
-                            slug={id}
-                            viewMode={viewMode}
-                            onBuy={setBuyModal}
-                          />
+                          <ListingCard key={listing.listing_id} listing={listing} slug={id} viewMode={viewMode} onBuy={setBuyModal} />
                         ))}
                       </div>
                     </>
@@ -781,19 +811,9 @@ export default function CollectionPage() {
                 </>
               )}
 
-              {tab === "Activity" && (
-                <ActivityFeed collectionId={id} nftContract={collection?.contract_address} limit={40} />
-              )}
-
-              {tab === "Analytics" && (
-                <div className="space-y-6">
-                  <PriceChart nftContract={contractAddr} />
-                </div>
-              )}
-
-              {tab === "Owners" && (
-                <OwnersTab contractAddress={contractAddr} />
-              )}
+              {tab === "Activity"  && <ActivityFeed collectionId={id} nftContract={collection?.contract_address} limit={40} />}
+              {tab === "Analytics" && <div className="space-y-6"><PriceChart nftContract={contractAddr} /></div>}
+              {tab === "Owners"    && <OwnersTab contractAddress={contractAddr} totalSupply={stats.totalSupplyRaw} />}
             </div>
           </div>
         </div>
@@ -804,7 +824,6 @@ export default function CollectionPage() {
           listing={buyModal}
           onClose={() => setBuyModal(null)}
           onSuccess={() => {
-            // ✅ Immediately remove bought listing from UI
             setListedTokensWithImages(prev => prev.filter(t => t.listing_id !== buyModal.listing_id));
             setBuyModal(null);
           }}
