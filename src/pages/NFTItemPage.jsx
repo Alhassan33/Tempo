@@ -466,26 +466,11 @@ export default function NFTItemPage() {
               </>
             )}
 
-            {/* ══ NOT CONNECTED ══════════════════════════════════════════════ */}
-            {!address && isListed && (
-              <div className="flex gap-3">
-                <button onClick={() => setShowBuy(true)}
-                  className="flex-1 h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
-                  style={{ background: "#22d3ee", color: "#0b0f14", border: "none", cursor: "pointer" }}>
-                  <ShoppingCart size={15} /> Buy Now
-                </button>
-                <button onClick={() => setShowOffer(true)}
-                  className="flex-1 h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
-                  style={{ background: "rgba(167,139,250,0.1)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.3)", cursor: "pointer" }}>
-                  <Gavel size={14} /> Make Offer
-                </button>
-              </div>
-            )}
-
-            {!address && !isListed && (
+            {/* ══ NOT CONNECTED — show connect prompt only ══════════════════ */}
+            {!address && (
               <div className="flex items-center gap-2 text-xs rounded-xl px-4 py-3"
                 style={{ background: "rgba(255,255,255,0.03)", color: "#9da7b3", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <Wallet size={13} /> Connect wallet to interact with this NFT
+                <Wallet size={13} /> Connect wallet to buy or make an offer
               </div>
             )}
           </div>
