@@ -61,7 +61,7 @@ export default function App() {
                     <Route path="/launchpad" element={<LaunchpadPage />} />
                     <Route path="/launchpad/:slug" element={<MintPage />} />
                     <Route path="/portfolio" element={<PortfolioPage />} />
-                    <Route path="/applocation" element={<ApplicationPage />} />
+                    <Route path="/application" element={<ApplicationPage />} />
                     <Route path="/admin" element={<AdminPage />} />
                   </Routes>
                 </Layout>
