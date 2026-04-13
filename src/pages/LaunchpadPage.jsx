@@ -427,30 +427,31 @@ export default function LaunchpadPage() {
         </div>
       )}
 
-      {/* Bottom CTA */}
-{!isLoading && (
-  <div className="mt-12 rounded-2xl p-8 text-center relative overflow-hidden"
-    style={{ background: "#0d1219", border: "1px solid rgba(34,197,94,0.15)" }}> {/* Border to Green */}
-    <div className="absolute inset-0 pointer-events-none"
-      style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(34,197,94,0.06) 0%, transparent 70%)" }} /> {/* Glow to Green */}
-    <Rocket size={32} className="mx-auto mb-3" style={{ color: "#22c55e" }} />
-    <h3 className="font-extrabold text-lg mb-2" style={{ color: "#e6edf3" }}>Launch Your Collection</h3>
-    <p className="text-sm mb-5 max-w-sm mx-auto" style={{ color: "#9da7b3" }}>
-      Apply to list your NFT project on the Tempo Launchpad. Multi-phase minting, allowlist support, and more.
-    </p>
-    <div className="flex items-center justify-center gap-3">
-      {/* Primary Green Button */}
-      <button onClick={() => navigate("/application")}
-        className="h-10 px-6 rounded-xl text-sm font-bold"
-        style={{ background: "#22c55e", color: "#0b0f14", border: "none", cursor: "pointer" }}>
-        Apply Now
-      </button>
-      <button onClick={() => navigate("/launchpad/guide")}
-        className="h-10 px-6 rounded-xl text-sm font-bold"
-        style={{ background: "transparent", color: "#22c55e", border: "1px solid rgba(34,197,94,0.3)", cursor: "pointer" }}>
-        Read the Guide
-      </button>
-    </div>
-  </div>
-)}
-}
+            {/* Bottom CTA */}
+      {!isLoading && (
+        <div className="mt-12 rounded-2xl p-8 text-center relative overflow-hidden"
+          style={{ background: "#0d1219", border: "1px solid rgba(34,197,94,0.15)" }}>
+          <div className="absolute inset-0 pointer-events-none"
+            style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(34,197,94,0.06) 0%, transparent 70%)" }} />
+          <Rocket size={32} className="mx-auto mb-3" style={{ color: "#22c55e" }} />
+          <h3 className="font-extrabold text-lg mb-2" style={{ color: "#e6edf3" }}>Launch Your Collection</h3>
+          <p className="text-sm mb-5 max-w-sm mx-auto" style={{ color: "#9da7b3" }}>
+            Apply to list your NFT project on the Tempo Launchpad. Multi-phase minting, allowlist support, and more.
+          </p>
+          <div className="flex items-center justify-center gap-3">
+            <button onClick={() => navigate("/application")}
+              className="h-10 px-6 rounded-xl text-sm font-bold"
+              style={{ background: "#22c55e", color: "#0b0f14", border: "none", cursor: "pointer" }}>
+              Apply Now
+            </button>
+            <button onClick={() => navigate("/launchpad/guide")}
+              className="h-10 px-6 rounded-xl text-sm font-bold"
+              style={{ background: "transparent", color: "#22c55e", border: "1px solid rgba(34,197,94,0.3)", cursor: "pointer" }}>
+              Read the Guide
+            </button>
+          </div>
+        </div>
+      )}
+    </div> 
+  );  
+}   
