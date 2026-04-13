@@ -17,7 +17,7 @@ const NAV_LINKS = [
   { to: "/",          label: "Market",    icon: ShoppingBag },
   { to: "/launchpad", label: "Launchpad", icon: Rocket      },
   { to: "/portfolio", label: "Portfolio", icon: Briefcase   },
-  { to: "/manage",    label: "Manage",    icon: Settings    },
+  { to: "/application",    label: "Apply",    icon: Settings    },
 ];
 
 export default function Layout({ children }) {
