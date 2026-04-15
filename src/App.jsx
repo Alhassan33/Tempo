@@ -4,7 +4,6 @@ import { getDefaultConfig, RainbowKitProvider, darkTheme } from "@rainbow-me/rai
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "@rainbow-me/rainbowkit/styles.css";
 
-// Components & Pages
 import Layout from "./components/Layout.jsx";
 import Market from "./pages/Market.jsx";
 import CollectionPage from "./pages/CollectionPage.jsx";
@@ -14,32 +13,25 @@ import NFTItemPage from "./pages/NFTItemPage.jsx";
 import PortfolioPage from "./pages/PortfolioPage.jsx";
 import ApplicationPage from "./pages/ApplicationPage.jsx";
 import AdminPage from "./pages/AdminPage.jsx";
+import StudioPage from "./pages/StudioPage.jsx";
+import CollectionManagerPage from "./pages/CollectionManagerPage.jsx";
 
-// Context
 import { LaunchpadProvider } from "./context/LaunchpadContext.jsx";
 import { PortfolioProvider } from "./context/PortfolioContext.jsx";
 
-// 1. Define Tempo Mainnet Configuration
 const tempoMainnet = {
   id: 4217,
   name: "Tempo Mainnet",
   nativeCurrency: { name: "USD", symbol: "USD", decimals: 18 },
-  rpcUrls: {
-    default: { http: ["https://rpc.tempo.xyz"] },
-  },
-  blockExplorers: {
-    default: { name: "Tempo Explorer", url: "https://explore.tempo.xyz" },
-  },
+  rpcUrls: { default: { http: ["https://rpc.tempo.xyz"] } },
+  blockExplorers: { default: { name: "Tempo Explorer", url: "https://explore.tempo.xyz" } },
 };
 
-// 2. Setup Wagmi Config
 const config = getDefaultConfig({
   appName: "Tempo NFTs",
-  projectId: "YOUR_REOWN_PROJECT_ID", // Get one at cloud.reown.com
+  projectId: "YOUR_REOWN_PROJECT_ID",
   chains: [tempoMainnet],
-  transports: {
-    [tempoMainnet.id]: http(),
-  },
+  transports: { [tempoMainnet.id]: http() },
 });
 
 const queryClient = new QueryClient();
@@ -54,15 +46,26 @@ export default function App() {
               <PortfolioProvider>
                 <Layout>
                   <Routes>
-                    <Route path="/" element={<Market />} />
-<Route path="/collection/:id/:tokenId" element={<NFTItemPage />} />
-                    <Route path="/collection/:id" element={<CollectionPage />} />
-                    <Route path="/nft/:tokenId" element={<NFTItemPage />} />
-                    <Route path="/launchpad" element={<LaunchpadPage />} />
-                    <Route path="/launchpad/:slug" element={<MintPage />} />
-                    <Route path="/portfolio" element={<PortfolioPage />} />
-                    <Route path="/application" element={<ApplicationPage />} />
-                    <Route path="/admin" element={<AdminPage />} />
+                    {/* Marketplace */}
+                    <Route path="/"                              element={<Market />} />
+                    <Route path="/collection/:id"               element={<CollectionPage />} />
+                    <Route path="/collection/:id/:tokenId"      element={<NFTItemPage />} />
+                    <Route path="/nft/:tokenId"                 element={<NFTItemPage />} />
+
+                    {/* Launchpad */}
+                    <Route path="/launchpad"                    element={<LaunchpadPage />} />
+                    <Route path="/launchpad/:slug"              element={<MintPage />} />
+
+                    {/* Creator Studio */}
+                    <Route path="/studio"                       element={<StudioPage />} />
+                    <Route path="/studio/manage/:contractAddress" element={<CollectionManagerPage />} />
+
+                    {/* User */}
+                    <Route path="/portfolio"                    element={<PortfolioPage />} />
+
+                    {/* Admin */}
+                    <Route path="/application"                  element={<ApplicationPage />} />
+                    <Route path="/admin"                        element={<AdminPage />} />
                   </Routes>
                 </Layout>
               </PortfolioProvider>
