@@ -5,12 +5,19 @@
  *   DB → RAW 6-decimal units  e.g. 25000000 = $25.00 pathUSD
  *   UI → divide by 1e6 for display
  *
- * KEY FIXES IN THIS VERSION:
- *   1. Transfer TO marketplace = listing custody, do NOT deactivate
- *   2. Transfer AWAY from marketplace = sale/cancel, deactivate
- *   3. Listed event always force-sets active=true after upsert
+ * Indexes:
+ *   1. Marketplace events  → listings, sales tables
+ *   2. NFT Transfer events → nfts table (ownership)
+ *   3. Factory CollectionCreated → collections table (auto-register Studio drops)
+ *   4. Collection Minted events → update total_minted + collection stats
+ *
+ * KEY FIXES:
+ *   1. Transfer TO marketplace = listing custody — do NOT deactivate
+ *   2. Transfer AWAY from marketplace = sale/cancel — deactivate
+ *   3. Listed event force-sets active=true after upsert (race condition fix)
  *   4. Duplicate listing cleanup every run
- *   5. Cancelled event deactivates by listing_id AND by token
+ *   5. CollectionCreated: auto-registers any new Studio collection in DB
+ *   6. Minted: keeps total_minted in sync for launchpad progress bars
  *
  * Schedule: every minute
  *   vercel.json → { "path": "/api/cron/sync", "schedule": "* * * * *" }
@@ -33,12 +40,23 @@ const publicClient = createPublicClient({
   transport: http("https://rpc.tempo.xyz"),
 });
 
-const MARKETPLACE_ADDRESS  = "0x218AB916fe8d7A1Ca87d7cD5Dfb1d44684Ab926b";
-const MARKETPLACE_LOWER    = MARKETPLACE_ADDRESS.toLowerCase();
-const CHUNK_SIZE            = 2000n;
-const ZERO_ADDRESS          = "0x0000000000000000000000000000000000000000";
-const MIN_PRICE_RAW         = 10_000n;
-const MAX_PRICE_RAW         = 1_000_000_000_000n;
+// ─── Addresses ────────────────────────────────────────────────────────────────
+const MARKETPLACE_ADDRESS = "0x218AB916fe8d7A1Ca87d7cD5Dfb1d44684Ab926b";
+const LAUNCHPAD_FACTORY   = "0x0451929d3c5012978127A2e347d207Aa8b67f14d";
+const MARKETPLACE_LOWER   = MARKETPLACE_ADDRESS.toLowerCase();
+const CHUNK_SIZE           = 2000n;
+const ZERO_ADDRESS         = "0x0000000000000000000000000000000000000000";
+const MIN_PRICE_RAW        = 10_000n;           // $0.01
+const MAX_PRICE_RAW        = 1_000_000_000_000n; // $1,000,000
+
+// ─── Minimal read ABI for on-chain collection data ────────────────────────────
+const COLLECTION_READ_ABI = [
+  { name: "name",         type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "string"  }] },
+  { name: "symbol",       type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "string"  }] },
+  { name: "maxSupply",    type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { name: "totalMinted",  type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { name: "creator",      type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+];
 
 function getDb() {
   return createClient(
@@ -76,6 +94,7 @@ async function getLogs({ fromBlock, toBlock, event, address }) {
   return logs;
 }
 
+// ─── Ensure collection row exists ─────────────────────────────────────────────
 async function ensureCollection(db, contractAddress) {
   const addr = contractAddress.toLowerCase();
   const { data } = await db
@@ -98,11 +117,6 @@ async function ensureCollection(db, contractAddress) {
   }
 }
 
-/**
- * Deactivate ALL active listings for a given token.
- * Only call this when a token genuinely leaves the marketplace
- * (sale, cancel, or transfer AWAY from marketplace).
- */
 async function deactivateTokenListings(db, nftContract, tokenId) {
   await db
     .from("listings")
@@ -116,51 +130,32 @@ async function updateCollectionStats(db, contractAddress) {
   const addr     = contractAddress.toLowerCase();
   const since24h = new Date(Date.now() - 86_400_000).toISOString();
 
-  const { data: floorRow } = await db
-    .from("listings")
-    .select("price")
-    .eq("nft_contract", addr)
-    .eq("active", true)
-    .order("price", { ascending: true })
-    .limit(1);
+  const { data: floorRow } = await db.from("listings").select("price")
+    .eq("nft_contract", addr).eq("active", true).order("price", { ascending: true }).limit(1);
   const floorPrice = floorRow?.[0]?.price ?? 0;
 
-  const { count: listedCount } = await db
-    .from("listings")
-    .select("*", { count: "exact", head: true })
-    .eq("nft_contract", addr)
-    .eq("active", true);
+  const { count: listedCount } = await db.from("listings")
+    .select("*", { count: "exact", head: true }).eq("nft_contract", addr).eq("active", true);
 
-  const { data: allSales } = await db
-    .from("sales")
-    .select("price")
-    .eq("nft_contract", addr);
+  const { data: allSales } = await db.from("sales").select("price").eq("nft_contract", addr);
   const volumeTotal = allSales?.reduce((s, r) => s + (Number(r.price) || 0), 0) ?? 0;
   const totalSales  = allSales?.length ?? 0;
 
-  const { data: sales24h } = await db
-    .from("sales")
-    .select("price")
-    .eq("nft_contract", addr)
-    .gte("sold_at", since24h);
+  const { data: sales24h } = await db.from("sales").select("price")
+    .eq("nft_contract", addr).gte("sold_at", since24h);
   const volume24h     = sales24h?.reduce((s, r) => s + (Number(r.price) || 0), 0) ?? 0;
   const salesCount24h = sales24h?.length ?? 0;
 
-  const { count: owners } = await db
-    .from("nfts")
+  const { count: owners } = await db.from("nfts")
     .select("*", { count: "exact", head: true })
     .eq("contract_address", addr)
     .neq("owner_address", ZERO_ADDRESS)
     .neq("owner_address", MARKETPLACE_LOWER);
 
-  const { data: colRow } = await db
-    .from("collections")
-    .select("total_supply")
-    .eq("contract_address", addr)
-    .single();
+  const { data: colRow } = await db.from("collections")
+    .select("total_supply").eq("contract_address", addr).single();
   const marketCap = floorPrice && colRow?.total_supply
-    ? Number(floorPrice) * colRow.total_supply
-    : 0;
+    ? Number(floorPrice) * colRow.total_supply : 0;
 
   await db.from("collections").update({
     floor_price:  floorPrice,
@@ -174,17 +169,10 @@ async function updateCollectionStats(db, contractAddress) {
   }).eq("contract_address", addr);
 }
 
-/**
- * ✅ FIXED: Only deactivate listings when token transfers AWAY from marketplace.
- * Transfer TO marketplace = NFT entering escrow for a listing — do NOT deactivate.
- * Transfer FROM marketplace = sale or cancel — deactivate.
- */
 async function syncNFTOwnership(db, contractAddress, fromBlock, toBlock) {
   const addr = contractAddress.toLowerCase();
   const logs = await getLogs({
-    fromBlock,
-    toBlock,
-    address: contractAddress,
+    fromBlock, toBlock, address: contractAddress,
     event: "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
   });
   if (!logs.length) return 0;
@@ -195,14 +183,12 @@ async function syncNFTOwnership(db, contractAddress, fromBlock, toBlock) {
     const toAddr   = to.toLowerCase();
     const fromAddr = from.toLowerCase();
 
-    // ✅ Only deactivate listings when token moves AWAY from marketplace
-    // (sale completed or cancel — NFT returned to owner or buyer)
-    // Do NOT deactivate when token moves TO marketplace (that's the listing deposit)
+    // Only deactivate when token leaves the marketplace (sale/cancel)
+    // NOT when it enters the marketplace (listing deposit)
     if (fromAddr === MARKETPLACE_LOWER && toAddr !== MARKETPLACE_LOWER) {
       await deactivateTokenListings(db, contractAddress, tokenId);
     }
 
-    // Update NFT ownership in DB
     const { error } = await db.from("nfts").upsert({
       contract_address:   addr,
       token_id:           Number(tokenId),
@@ -216,30 +202,18 @@ async function syncNFTOwnership(db, contractAddress, fromBlock, toBlock) {
   return count;
 }
 
-/**
- * Clean up duplicate/zombie listings:
- * If multiple active listings exist for the same nft_contract + token_id,
- * keep only the highest listing_id (most recent) and deactivate the rest.
- */
 async function cleanDuplicateListings(db) {
-  const { data: rows } = await db
-    .from("listings")
+  const { data: rows } = await db.from("listings")
     .select("id, listing_id, nft_contract, token_id")
-    .eq("active", true)
-    .order("listing_id", { ascending: false });
-
+    .eq("active", true).order("listing_id", { ascending: false });
   if (!rows?.length) return;
 
-  const seen        = new Set();
+  const seen = new Set();
   const toDeactivate = [];
-
   for (const row of rows) {
     const key = `${row.nft_contract}:${row.token_id}`;
-    if (seen.has(key)) {
-      toDeactivate.push(row.listing_id);
-    } else {
-      seen.add(key);
-    }
+    if (seen.has(key)) toDeactivate.push(row.listing_id);
+    else seen.add(key);
   }
 
   if (toDeactivate.length > 0) {
@@ -250,6 +224,144 @@ async function cleanDuplicateListings(db) {
   }
 }
 
+// ─── NEW: Sync CollectionCreated events from the factory ─────────────────────
+// Auto-registers any new Studio-deployed collection into the collections table.
+// This means the marketplace, portfolio, and indexer all pick it up immediately
+// without any manual admin step.
+async function syncFactoryCollections(db, fromBlock, toBlock) {
+  const logs = await getLogs({
+    fromBlock, toBlock,
+    address: LAUNCHPAD_FACTORY,
+    event: "event CollectionCreated(address indexed collection, address indexed creator, string name, string symbol)",
+  });
+
+  if (!logs.length) return 0;
+  console.log(`[sync] ${logs.length} new collection(s) from factory`);
+
+  let count = 0;
+  for (const log of logs) {
+    const { collection, creator, name, symbol } = log.args;
+    const addr = collection.toLowerCase();
+
+    // Check if already in DB (could have been added by StudioPage directly)
+    const { data: existing } = await db.from("collections")
+      .select("id").eq("contract_address", addr).single();
+
+    if (existing) {
+      console.log(`[sync] collection ${addr} already registered, skipping`);
+      continue;
+    }
+
+    // Read on-chain data for the new collection
+    let maxSupply = 0;
+    let totalMinted = 0;
+    try {
+      const [ms, tm] = await Promise.all([
+        publicClient.readContract({ address: collection, abi: COLLECTION_READ_ABI, functionName: "maxSupply" }),
+        publicClient.readContract({ address: collection, abi: COLLECTION_READ_ABI, functionName: "totalMinted" }),
+      ]);
+      maxSupply   = Number(ms);
+      totalMinted = Number(tm);
+    } catch (e) {
+      console.warn(`[sync] couldn't read chain data for ${addr}:`, e.message);
+    }
+
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+      + "-" + addr.slice(2, 8);
+
+    // Insert into collections (marketplace visible)
+    await db.from("collections").insert({
+      contract_address:  addr,
+      name,
+      slug,
+      verified:          false,
+      floor_price:       0,
+      volume_total:      0,
+      volume_24h:        0,
+      total_sales:       0,
+      total_supply:      maxSupply,
+      total_minted:      totalMinted,
+      metadata_base_uri: "",
+      creator_name:      creator.slice(0, 6) + "…" + creator.slice(-4),
+    });
+
+    // Also create a projects row if one doesn't exist yet
+    // (handles the case where someone deploys via a script, not the Studio UI)
+    const { data: existingProject } = await db.from("projects")
+      .select("id").eq("contract_address", addr).single();
+
+    if (!existingProject) {
+      await db.from("projects").insert({
+        name,
+        symbol,
+        contract_address: addr,
+        creator_wallet:   creator.toLowerCase(),
+        max_supply:       maxSupply,
+        status:           "draft",
+        created_at:       new Date().toISOString(),
+        updated_at:       new Date().toISOString(),
+      });
+    }
+
+    console.log(`[sync] registered new collection: ${name} (${addr})`);
+    count++;
+  }
+
+  return count;
+}
+
+// ─── NEW: Sync Minted events for all known collections ────────────────────────
+// Keeps total_minted accurate so mint progress bars show live data.
+// Also updates owner count since mints create new NFT owners.
+async function syncMintedEvents(db, collections, fromBlock, toBlock) {
+  let count = 0;
+
+  for (const col of collections) {
+    const addr = col.contract_address.toLowerCase();
+
+    const logs = await getLogs({
+      fromBlock, toBlock,
+      address: col.contract_address,
+      event: "event Minted(address indexed to, uint256 phaseId, uint256 quantity, uint256 totalPaid)",
+    });
+
+    if (!logs.length) continue;
+
+    console.log(`[sync] ${logs.length} Minted events for ${addr}`);
+
+    // Read current totalMinted from chain (most accurate)
+    let newTotalMinted = null;
+    try {
+      const tm = await publicClient.readContract({
+        address: col.contract_address,
+        abi: COLLECTION_READ_ABI,
+        functionName: "totalMinted",
+      });
+      newTotalMinted = Number(tm);
+    } catch {}
+
+    if (newTotalMinted !== null) {
+      await db.from("collections")
+        .update({ total_minted: newTotalMinted })
+        .eq("contract_address", addr);
+    }
+
+    // Also update the projects table so MintPage progress bar is accurate
+    await db.from("projects")
+      .update({ total_minted: newTotalMinted })
+      .eq("contract_address", addr);
+
+    // Update NFT ownership for each mint (Transfer from 0x0 is handled by
+    // syncNFTOwnership, but we update stats here specifically for mint volume)
+    await updateCollectionStats(db, addr);
+
+    count += logs.length;
+  }
+
+  return count;
+}
+
+// ─── Main handler ─────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).end();
   console.log("[sync] starting at", new Date().toISOString());
@@ -258,27 +370,24 @@ export default async function handler(req, res) {
     const db          = getDb();
     const latestBlock = await publicClient.getBlockNumber();
 
-    const { data: stateRow } = await db
-      .from("indexer_state")
-      .select("last_block")
-      .eq("contract", MARKETPLACE_ADDRESS)
-      .single();
+    const { data: stateRow } = await db.from("indexer_state")
+      .select("last_block").eq("contract", MARKETPLACE_ADDRESS).single();
     const lastBlock = BigInt(stateRow?.last_block || 0);
 
     if (lastBlock >= latestBlock) {
       await cleanDuplicateListings(db);
-      return res.status(200).json({
-        ok: true, synced: 0,
-        block: latestBlock.toString(),
-        msg: "up to date",
-      });
+      return res.status(200).json({ ok: true, synced: 0, block: latestBlock.toString(), msg: "up to date" });
     }
 
     const safeFrom = lastBlock === 0n ? latestBlock - 5000n : lastBlock + 1n;
     console.log(`[sync] scanning ${safeFrom} → ${latestBlock}`);
     let synced = 0, skipped = 0;
 
-    // ── Listed ────────────────────────────────────────────────────────────
+    // ── 1. Factory: auto-register new Studio collections ─────────────────
+    const newCollections = await syncFactoryCollections(db, safeFrom, latestBlock);
+    synced += newCollections;
+
+    // ── 2. Marketplace: Listed ────────────────────────────────────────────
     const listedLogs = await getLogs({
       fromBlock: safeFrom, toBlock: latestBlock,
       address: MARKETPLACE_ADDRESS,
@@ -287,16 +396,10 @@ export default async function handler(req, res) {
 
     for (const log of listedLogs) {
       const { listingId, seller, nftContract, tokenId, price } = log.args;
-
-      if (!isPriceValid(price)) {
-        console.warn(`[sync] SKIP Listed ${listingId} bad price ${price}`);
-        skipped++;
-        continue;
-      }
+      if (!isPriceValid(price)) { skipped++; continue; }
 
       await ensureCollection(db, nftContract);
 
-      // Upsert the listing — always active=true on a Listed event
       const { error } = await db.from("listings").upsert({
         listing_id:   Number(listingId),
         seller:       seller.toLowerCase(),
@@ -310,18 +413,16 @@ export default async function handler(req, res) {
       }, { onConflict: "listing_id" });
 
       if (!error) {
-        // ✅ Force active=true after upsert — belt and suspenders
-        // Prevents any Transfer event race condition from keeping it false
+        // Force active=true — prevents Transfer race condition
         await db.from("listings")
           .update({ active: true, updated_at: new Date().toISOString() })
           .eq("listing_id", Number(listingId));
-
         await updateCollectionStats(db, nftContract);
         synced++;
       }
     }
 
-    // ── Sale ──────────────────────────────────────────────────────────────
+    // ── 3. Marketplace: Sale ──────────────────────────────────────────────
     const saleLogs = await getLogs({
       fromBlock: safeFrom, toBlock: latestBlock,
       address: MARKETPLACE_ADDRESS,
@@ -332,16 +433,11 @@ export default async function handler(req, res) {
       const { listingId, buyer, price } = log.args;
       if (!isPriceValid(price)) { skipped++; continue; }
 
-      const { data: listing } = await db
-        .from("listings")
-        .select("seller, nft_contract, token_id")
-        .eq("listing_id", Number(listingId))
-        .single();
+      const { data: listing } = await db.from("listings")
+        .select("seller, nft_contract, token_id").eq("listing_id", Number(listingId)).single();
 
       if (listing) {
-        // Deactivate ALL listings for this token (sale = token left marketplace)
         await deactivateTokenListings(db, listing.nft_contract, listing.token_id);
-
         await db.from("sales").upsert({
           listing_id:   Number(listingId),
           buyer:        buyer.toLowerCase(),
@@ -353,18 +449,16 @@ export default async function handler(req, res) {
           block_number: Number(log.blockNumber),
           sold_at:      new Date().toISOString(),
         }, { onConflict: "listing_id" });
-
         await updateCollectionStats(db, listing.nft_contract);
         synced++;
       } else {
-        // Fallback: mark this listing_id inactive
         await db.from("listings")
           .update({ active: false, updated_at: new Date().toISOString() })
           .eq("listing_id", Number(listingId));
       }
     }
 
-    // ── Cancelled ─────────────────────────────────────────────────────────
+    // ── 4. Marketplace: Cancelled ─────────────────────────────────────────
     const cancelLogs = await getLogs({
       fromBlock: safeFrom, toBlock: latestBlock,
       address: MARKETPLACE_ADDRESS,
@@ -373,19 +467,13 @@ export default async function handler(req, res) {
 
     for (const log of cancelLogs) {
       const listingId = Number(log.args.listingId);
-
-      const { data: listing } = await db
-        .from("listings")
-        .select("nft_contract, token_id")
-        .eq("listing_id", listingId)
-        .single();
+      const { data: listing } = await db.from("listings")
+        .select("nft_contract, token_id").eq("listing_id", listingId).single();
 
       if (listing) {
-        // Deactivate ALL listings for this token
         await deactivateTokenListings(db, listing.nft_contract, listing.token_id);
         await updateCollectionStats(db, listing.nft_contract);
       } else {
-        // Fallback: at least mark the specific listing_id inactive
         await db.from("listings")
           .update({ active: false, updated_at: new Date().toISOString() })
           .eq("listing_id", listingId);
@@ -393,7 +481,7 @@ export default async function handler(req, res) {
       synced++;
     }
 
-    // ── PriceUpdated ──────────────────────────────────────────────────────
+    // ── 5. Marketplace: PriceUpdated ──────────────────────────────────────
     const priceLogs = await getLogs({
       fromBlock: safeFrom, toBlock: latestBlock,
       address: MARKETPLACE_ADDRESS,
@@ -408,12 +496,8 @@ export default async function handler(req, res) {
       synced++;
     }
 
-    // ── NFT Transfers → ownership sync ───────────────────────────────────
-    // Transfer TO marketplace   = listing deposit  → do NOT deactivate (fixed in syncNFTOwnership)
-    // Transfer FROM marketplace = sale/cancel      → deactivate (handled above + in syncNFTOwnership)
-    const { data: collections } = await db
-      .from("collections")
-      .select("contract_address");
+    // ── 6. NFT Transfers → ownership (all known collections) ─────────────
+    const { data: collections } = await db.from("collections").select("contract_address");
 
     for (const col of collections || []) {
       const n = await syncNFTOwnership(db, col.contract_address, safeFrom, latestBlock);
@@ -421,10 +505,14 @@ export default async function handler(req, res) {
       if (n > 0) await updateCollectionStats(db, col.contract_address);
     }
 
-    // ── Cleanup duplicate/zombie active listings ──────────────────────────
+    // ── 7. Minted events → keep total_minted + stats current ─────────────
+    const mintedCount = await syncMintedEvents(db, collections || [], safeFrom, latestBlock);
+    synced += mintedCount;
+
+    // ── 8. Duplicate listing cleanup ──────────────────────────────────────
     await cleanDuplicateListings(db);
 
-    // ── Save progress ─────────────────────────────────────────────────────
+    // ── 9. Save progress ──────────────────────────────────────────────────
     await db.from("indexer_state").upsert({
       contract:   MARKETPLACE_ADDRESS,
       last_block: Number(latestBlock),
@@ -432,10 +520,7 @@ export default async function handler(req, res) {
     }, { onConflict: "contract" });
 
     console.log(`[sync] done — ${synced} synced, ${skipped} skipped, block ${latestBlock}`);
-    return res.status(200).json({
-      ok: true, synced, skipped,
-      block: latestBlock.toString(),
-    });
+    return res.status(200).json({ ok: true, synced, skipped, block: latestBlock.toString() });
 
   } catch (err) {
     console.error("[sync] fatal:", err);
