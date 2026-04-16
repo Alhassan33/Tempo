@@ -1,246 +1,256 @@
 // components/ActivityFeed.jsx
-// Shows sales + listing/delist events for a collection or single token.
-//
-// FIXES:
-//   1. Sales query now filters by nft_contract when collectionId is passed
-//   2. Price divided by 1e6 for display (DB stores raw 6-decimal units)
-//   3. Realtime subscription so sales appear without page refresh
-//   4. collectionId accepted as either slug OR contract_address
+// Queries Supabase directly — no /api/activity endpoint needed.
+// Shows: LISTED, DELIST, SALE events with correct price display and time.
 
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { ArrowRight, ExternalLink } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 const EXPLORER_BASE = "https://explore.tempo.xyz";
+const FONT          = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 
-const TYPE_CONFIG = {
-  sale:     { label: "SALE",     color: "#22c55e", bg: "rgba(34,197,94,0.1)"   },
-  listing:  { label: "LIST",     color: "#22d3ee", bg: "rgba(34,211,238,0.1)"  },
-  delist:   { label: "DELIST",   color: "#9da7b3", bg: "rgba(157,167,179,0.1)" },
-  mint:     { label: "MINT",     color: "#f97316", bg: "rgba(249,115,22,0.1)"  },
-  transfer: { label: "TRANSFER", color: "#9da7b3", bg: "rgba(157,167,179,0.1)" },
-};
-
-function shortenAddress(addr) {
-  if (!addr) return "—";
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-}
-
-function timeAgo(dateStr) {
-  if (!dateStr) return "";
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const m = Math.floor(diff / 60000);
-  const h = Math.floor(diff / 3600000);
-  const d = Math.floor(diff / 86400000);
-  if (m < 1)  return "just now";
-  if (m < 60) return `${m}m ago`;
-  if (h < 24) return `${h}h ago`;
-  return `${d}d ago`;
-}
-
-// ✅ Price stored as raw 6-decimal units — always ÷1e6 for display
-function displayPrice(raw) {
-  if (raw == null) return null;
+// price in DB = raw 6-decimal units
+function fmtPrice(raw) {
+  if (!raw && raw !== 0) return null;
   return (Number(raw) / 1e6).toFixed(2);
 }
 
-export default function ActivityFeed({
-  collectionId,    // slug or contract_address of the collection
-  nftContract,     // explicit contract_address (preferred over collectionId)
-  tokenId,         // if set, filter to single token
-  limit = 30,
-}) {
-  const [activity, setActivity] = useState([]);
-  const [loading,  setLoading]  = useState(true);
+function timeAgo(isoString) {
+  if (!isoString) return "";
+  const diff = Date.now() - new Date(isoString).getTime();
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return s + "s ago";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + "m ago";
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + "h ago";
+  return Math.floor(h / 24) + "d ago";
+}
 
-  // Resolve contract address: use nftContract directly, or look up via collectionId
-  const [contractAddr, setContractAddr] = useState(nftContract?.toLowerCase() || null);
+function shorten(addr) {
+  if (!addr) return "—";
+  return addr.slice(0, 6) + "…" + addr.slice(-4);
+}
+
+const TYPE_CONFIG = {
+  SALE:   { label: "SALE",   color: "#22C55E", bg: "rgba(34,197,94,0.12)"   },
+  LISTED: { label: "LISTED", color: "#00E6A8", bg: "rgba(0,230,168,0.10)"   },
+  DELIST: { label: "DELIST", color: "#9da7b3", bg: "rgba(157,167,179,0.10)" },
+};
+
+// ─── useActivityData — Supabase direct query ──────────────────────────────────
+function useActivityData({ nftContract, collectionId, address, limit = 40 }) {
+  const [events,  setEvents]  = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState(null);
 
   useEffect(() => {
-    if (nftContract) {
-      setContractAddr(nftContract.toLowerCase());
-      return;
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        // ── 1. Fetch from sales table ────────────────────────────────────────
+        let salesQuery = supabase
+          .from("sales")
+          .select("listing_id, buyer, seller, nft_contract, token_id, price, tx_hash, sold_at")
+          .order("sold_at", { ascending: false })
+          .limit(limit);
+
+        if (nftContract) salesQuery = salesQuery.ilike("nft_contract", nftContract);
+        if (address)     salesQuery = salesQuery.or("buyer.ilike." + address + ",seller.ilike." + address);
+
+        // ── 2. Fetch from listings table (both active and inactive) ──────────
+        let listingsQuery = supabase
+          .from("listings")
+          .select("listing_id, seller, nft_contract, token_id, price, active, tx_hash, updated_at")
+          .order("updated_at", { ascending: false })
+          .limit(limit);
+
+        if (nftContract) listingsQuery = listingsQuery.ilike("nft_contract", nftContract);
+        if (address)     listingsQuery = listingsQuery.ilike("seller", address);
+
+        const [{ data: salesData, error: salesErr }, { data: listingsData, error: listErr }] =
+          await Promise.all([salesQuery, listingsQuery]);
+
+        if (salesErr)  console.warn("[ActivityFeed] sales error:", salesErr);
+        if (listErr)   console.warn("[ActivityFeed] listings error:", listErr);
+
+        // ── 3. Merge + normalise ─────────────────────────────────────────────
+        const saleEvents = (salesData || []).map(s => ({
+          type:         "SALE",
+          token_id:     s.token_id,
+          nft_contract: s.nft_contract,
+          price:        s.price,
+          from:         s.seller,
+          to:           s.buyer,
+          tx_hash:      s.tx_hash,
+          timestamp:    s.sold_at,
+          sort_ts:      new Date(s.sold_at).getTime(),
+        }));
+
+        // Separate listings into LISTED vs DELIST based on active flag
+        const listingEvents = (listingsData || []).map(l => ({
+          type:         l.active ? "LISTED" : "DELIST",
+          token_id:     l.token_id,
+          nft_contract: l.nft_contract,
+          price:        l.active ? l.price : null,
+          from:         l.seller,
+          to:           null,
+          tx_hash:      l.tx_hash,
+          timestamp:    l.updated_at,
+          sort_ts:      new Date(l.updated_at).getTime(),
+        }));
+
+        // Merge, sort by time descending, deduplicate
+        const seen = new Set();
+        const merged = [...saleEvents, ...listingEvents]
+          .sort((a, b) => b.sort_ts - a.sort_ts)
+          .filter(ev => {
+            // Deduplicate by tx_hash + type
+            const key = ev.tx_hash + "|" + ev.type + "|" + ev.token_id;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
+          .slice(0, limit);
+
+        if (!cancelled) setEvents(merged);
+      } catch (e) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-    if (!collectionId) return;
 
-    // collectionId might be a slug — resolve to contract_address
-    const isAddress = collectionId.startsWith("0x");
-    if (isAddress) {
-      setContractAddr(collectionId.toLowerCase());
-    } else {
-      supabase.from("collections").select("contract_address")
-        .eq("slug", collectionId).single()
-        .then(({ data }) => {
-          if (data?.contract_address) setContractAddr(data.contract_address.toLowerCase());
-        });
-    }
-  }, [collectionId, nftContract]);
+    load();
+    return () => { cancelled = true; };
+  }, [nftContract, collectionId, address, limit]);
 
-  async function loadActivity() {
-    if (!contractAddr && !tokenId) { setLoading(false); return; }
-    setLoading(true);
+  return { events, loading, error };
+}
 
-    // ── Sales ─────────────────────────────────────────────────────────────
-    let salesQ = supabase.from("sales").select("*")
-      .order("sold_at", { ascending: false }).limit(limit);
+// ─── Activity Row ─────────────────────────────────────────────────────────────
+function ActivityRow({ ev, slug }) {
+  const navigate = useNavigate();
+  const cfg = TYPE_CONFIG[ev.type] || TYPE_CONFIG.LISTED;
+  const price = fmtPrice(ev.price);
 
-    // ✅ FIX: filter sales by contract address (was missing before)
-    if (contractAddr) salesQ = salesQ.eq("nft_contract", contractAddr);
-    if (tokenId != null) salesQ = salesQ.eq("token_id", tokenId);
-
-    const { data: sales } = await salesQ;
-
-    // ── Listings ──────────────────────────────────────────────────────────
-    let listQ = supabase.from("listings").select("*")
-      .order("updated_at", { ascending: false }).limit(limit);
-
-    if (contractAddr) listQ = listQ.eq("nft_contract", contractAddr);
-    if (tokenId != null) listQ = listQ.eq("token_id", tokenId);
-
-    const { data: listings } = await listQ;
-
-    // ── Merge + sort ──────────────────────────────────────────────────────
-    const events = [
-      ...(sales || []).map(s => ({
-        type:      "sale",
-        name:      `#${s.token_id}`,
-        from:      s.seller,
-        to:        s.buyer,
-        price:     s.price,           // raw — displayed via displayPrice()
-        time:      timeAgo(s.sold_at),
-        tx:        s.tx_hash,
-        tokenId:   s.token_id,
-        timestamp: new Date(s.sold_at || 0).getTime(),
-      })),
-      ...(listings || []).map(l => ({
-        type:      l.active ? "listing" : "delist",
-        name:      `#${l.token_id}`,
-        from:      l.seller,
-        to:        null,
-        price:     l.active ? l.price : null,
-        time:      timeAgo(l.updated_at || l.created_at),
-        tx:        l.tx_hash,
-        tokenId:   l.token_id,
-        timestamp: new Date(l.updated_at || l.created_at || 0).getTime(),
-      })),
-    ]
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, limit);
-
-    setActivity(events);
-    setLoading(false);
+  function goToToken() {
+    if (slug && ev.token_id != null) navigate("/collection/" + slug + "/" + ev.token_id);
   }
 
-  useEffect(() => {
-    loadActivity();
-  }, [contractAddr, tokenId, limit]);
+  return (
+    <div
+      className="flex items-center gap-3 px-3 py-3 rounded-xl transition-all cursor-pointer"
+      style={{ background: "rgba(22,29,40,0.6)", fontFamily: FONT }}
+      onMouseEnter={e => (e.currentTarget.style.background = "rgba(22,29,40,0.9)")}
+      onMouseLeave={e => (e.currentTarget.style.background = "rgba(22,29,40,0.6)")}
+      onClick={goToToken}>
 
-  // ── Realtime: re-fetch when a new sale or listing comes in ───────────────
-  useEffect(() => {
-    if (!contractAddr) return;
+      {/* Type badge */}
+      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-md flex-shrink-0 tracking-wide"
+        style={{ background: cfg.bg, color: cfg.color, border: "1px solid " + cfg.color + "30" }}>
+        {cfg.label}
+      </span>
 
-    const salesChannel = supabase
-      .channel(`activity-sales-${contractAddr}`)
-      .on("postgres_changes", {
-        event: "*", schema: "public", table: "sales",
-        filter: `nft_contract=eq.${contractAddr}`,
-      }, () => loadActivity())
-      .subscribe();
+      {/* Token ID */}
+      <span className="text-xs font-bold flex-shrink-0" style={{ color: "#e6edf3" }}>
+        #{ev.token_id ?? "—"}
+      </span>
 
-    const listingsChannel = supabase
-      .channel(`activity-listings-${contractAddr}`)
-      .on("postgres_changes", {
-        event: "*", schema: "public", table: "listings",
-        filter: `nft_contract=eq.${contractAddr}`,
-      }, () => loadActivity())
-      .subscribe();
+      {/* From → To (hidden on small screens) */}
+      <span className="text-[11px] font-mono flex-1 hidden sm:flex items-center gap-1 min-w-0" style={{ color: "#9da7b3" }}>
+        <span className="truncate">{shorten(ev.from)}</span>
+        {ev.to && (
+          <>
+            <ArrowRight size={10} className="flex-shrink-0" />
+            <span className="truncate">{shorten(ev.to)}</span>
+          </>
+        )}
+      </span>
 
-    return () => {
-      supabase.removeChannel(salesChannel);
-      supabase.removeChannel(listingsChannel);
-    };
-  }, [contractAddr]);
+      {/* Price */}
+      <span className="font-mono text-xs font-bold flex-shrink-0"
+        style={{ color: ev.type === "SALE" ? "#22C55E" : ev.type === "LISTED" ? "#00E6A8" : "#9da7b3" }}>
+        {price ? price + " USD" : ev.type === "DELIST" ? "Delisted" : "—"}
+      </span>
+
+      {/* Time */}
+      <span className="text-[11px] flex-shrink-0 text-right" style={{ color: "#9da7b3", minWidth: "52px" }}>
+        {timeAgo(ev.timestamp)}
+      </span>
+
+      {/* Explorer link */}
+      {ev.tx_hash && (
+        <a
+          href={EXPLORER_BASE + "/tx/" + ev.tx_hash}
+          target="_blank" rel="noreferrer"
+          onClick={e => e.stopPropagation()}
+          className="flex-shrink-0"
+          style={{ color: "#6b7280" }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#00E6A8")}
+          onMouseLeave={e => (e.currentTarget.style.color = "#6b7280")}>
+          <ExternalLink size={11} />
+        </a>
+      )}
+    </div>
+  );
+}
+
+// ─── ActivityFeed ─────────────────────────────────────────────────────────────
+export default function ActivityFeed({
+  nftContract,    // filter by contract address
+  collectionId,   // slug (used for token links)
+  address,        // filter by wallet address
+  limit = 40,
+}) {
+  const { events, loading, error } = useActivityData({ nftContract, collectionId, address, limit });
 
   if (loading) {
     return (
       <div className="space-y-2">
-        {Array.from({ length: 6 }).map((_, i) => (
+        {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="h-12 rounded-xl animate-pulse" style={{ background: "#161d28" }} />
         ))}
       </div>
     );
   }
 
-  if (!activity.length) {
+  if (error) {
     return (
-      <div className="py-16 text-center">
-        <div className="text-3xl mb-3">📊</div>
-        <div className="text-sm font-bold mb-1" style={{ color: "#e6edf3" }}>No activity yet</div>
-        <p className="text-xs" style={{ color: "#9da7b3" }}>Sales and listings will appear here.</p>
+      <div className="py-6 text-center text-xs rounded-xl" style={{ color: "#EF4444", background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.2)" }}>
+        Failed to load activity: {error}
+      </div>
+    );
+  }
+
+  if (events.length === 0) {
+    return (
+      <div className="py-12 text-center text-sm" style={{ color: "#9da7b3", fontFamily: FONT }}>
+        No activity yet.
       </div>
     );
   }
 
   return (
-    <div>
-      {/* Header row */}
-      <div className="grid grid-cols-[80px_1fr_1fr_80px_80px] gap-3 px-4 pb-2 text-[10px] font-bold uppercase tracking-widest"
-        style={{ color: "#9da7b3", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-        <span>Type</span>
-        <span>Item</span>
-        <span className="hidden sm:block">Address</span>
-        <span>Price</span>
-        <span>Time</span>
+    <div className="space-y-1">
+      {/* Column headers */}
+      <div className="flex items-center gap-3 px-3 pb-2" style={{ fontFamily: FONT }}>
+        {["TYPE", "ITEM", "", "PRICE", "TIME", "TX"].map((h, i) => (
+          <span key={i}
+            className={"text-[9px] font-bold uppercase tracking-widest " + (i === 2 ? "flex-1 hidden sm:block" : i === 3 ? "flex-shrink-0" : i === 4 ? "flex-shrink-0" : i === 5 ? "flex-shrink-0 w-4" : "flex-shrink-0")}
+            style={{ color: "#6b7280" }}>
+            {h}
+          </span>
+        ))}
       </div>
 
-      <div className="space-y-0.5 mt-1">
-        {activity.map((ev, i) => {
-          const cfg = TYPE_CONFIG[ev.type] ?? TYPE_CONFIG.transfer;
-          const price = displayPrice(ev.price);
-
-          return (
-            <div key={i}
-              className="grid grid-cols-[80px_1fr_1fr_80px_80px] gap-3 items-center px-4 py-3 rounded-xl transition-colors"
-              style={{ background: "transparent" }}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(34,211,238,0.03)"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-
-              {/* Type badge */}
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md text-center w-fit"
-                style={{ background: cfg.bg, color: cfg.color }}>
-                {cfg.label}
-              </span>
-
-              {/* Token name */}
-              <span className="text-xs font-semibold font-mono truncate" style={{ color: "#e6edf3" }}>
-                {ev.name}
-              </span>
-
-              {/* From → To */}
-              <span className="hidden sm:flex items-center gap-1 text-[10px] font-mono truncate" style={{ color: "#9da7b3" }}>
-                {shortenAddress(ev.from)}
-                {ev.to && <><ArrowRight size={9} />{shortenAddress(ev.to)}</>}
-              </span>
-
-              {/* Price */}
-              <span className="text-xs font-mono font-bold" style={{ color: ev.type === "sale" ? "#22c55e" : "#22d3ee" }}>
-                {price ? `${price} USD` : "—"}
-              </span>
-
-              {/* Time + tx */}
-              <div className="flex items-center gap-1.5 justify-end">
-                <span className="text-[10px]" style={{ color: "#9da7b3" }}>{ev.time}</span>
-                {ev.tx && (
-                  <a href={`${EXPLORER_BASE}/tx/${ev.tx}`} target="_blank" rel="noreferrer"
-                    style={{ color: "#9da7b3" }}>
-                    <ExternalLink size={10} />
-                  </a>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      {events.map((ev, i) => (
+        <ActivityRow key={i} ev={ev} slug={collectionId} />
+      ))}
     </div>
   );
 }
