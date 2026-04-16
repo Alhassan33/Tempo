@@ -1,3 +1,12 @@
+// components/ActivityFeed.jsx
+// Shows sales + listing/delist events for a collection or single token.
+//
+// FIXES:
+//   1. Sales query now filters by nft_contract when collectionId is passed
+//   2. Price divided by 1e6 for display (DB stores raw 6-decimal units)
+//   3. Realtime subscription so sales appear without page refresh
+//   4. collectionId accepted as either slug OR contract_address
+
 import { useState, useEffect } from "react";
 import { ArrowRight, ExternalLink } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -5,24 +14,12 @@ import { supabase } from "@/lib/supabase";
 const EXPLORER_BASE = "https://explore.tempo.xyz";
 
 const TYPE_CONFIG = {
-  sale:     { label: "Sale",     color: "#22c55e", bg: "rgba(34,197,94,0.1)"   },
-  listing:  { label: "Listed",   color: "#22d3ee", bg: "rgba(34,211,238,0.1)"  },
-  delist:   { label: "Delist",   color: "#9da7b3", bg: "rgba(157,167,179,0.1)" },
-  transfer: { label: "Transfer", color: "#9da7b3", bg: "rgba(157,167,179,0.1)" },
-  mint:     { label: "Mint",     color: "#f97316", bg: "rgba(249,115,22,0.1)"  },
-  offer:    { label: "Offer",    color: "#a855f7", bg: "rgba(168,85,247,0.1)"  },
+  sale:     { label: "SALE",     color: "#22c55e", bg: "rgba(34,197,94,0.1)"   },
+  listing:  { label: "LIST",     color: "#22d3ee", bg: "rgba(34,211,238,0.1)"  },
+  delist:   { label: "DELIST",   color: "#9da7b3", bg: "rgba(157,167,179,0.1)" },
+  mint:     { label: "MINT",     color: "#f97316", bg: "rgba(249,115,22,0.1)"  },
+  transfer: { label: "TRANSFER", color: "#9da7b3", bg: "rgba(157,167,179,0.1)" },
 };
-
-/**
- * ✅ PRICE FIX: All prices in DB are raw 6-decimal units (e.g. 20000000 = $20.00)
- * Always divide by 1e6 before displaying.
- */
-function formatPrice(raw) {
-  if (raw == null || raw === "") return null;
-  const num = Number(raw);
-  if (isNaN(num) || num === 0) return null;
-  return (num / 1_000_000).toFixed(2);
-}
 
 function shortenAddress(addr) {
   if (!addr) return "—";
@@ -35,126 +32,134 @@ function timeAgo(dateStr) {
   const m = Math.floor(diff / 60000);
   const h = Math.floor(diff / 3600000);
   const d = Math.floor(diff / 86400000);
-  if (m < 1) return "just now";
+  if (m < 1)  return "just now";
   if (m < 60) return `${m}m ago`;
   if (h < 24) return `${h}h ago`;
   return `${d}d ago`;
 }
 
-export default function ActivityFeed({ collectionId, nftContract, tokenId, limit = 40 }) {
+// ✅ Price stored as raw 6-decimal units — always ÷1e6 for display
+function displayPrice(raw) {
+  if (raw == null) return null;
+  return (Number(raw) / 1e6).toFixed(2);
+}
+
+export default function ActivityFeed({
+  collectionId,    // slug or contract_address of the collection
+  nftContract,     // explicit contract_address (preferred over collectionId)
+  tokenId,         // if set, filter to single token
+  limit = 30,
+}) {
   const [activity, setActivity] = useState([]);
   const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState(null);
+
+  // Resolve contract address: use nftContract directly, or look up via collectionId
+  const [contractAddr, setContractAddr] = useState(nftContract?.toLowerCase() || null);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        // ── Sales ────────────────────────────────────────────────────────────
-        let salesQ = supabase
-          .from("sales")
-          .select("listing_id, buyer, seller, nft_contract, token_id, price, tx_hash, sold_at")
-          .order("sold_at", { ascending: false })
-          .limit(limit);
-
-        if (tokenId != null)   salesQ = salesQ.eq("token_id", tokenId);
-        if (nftContract)       salesQ = salesQ.ilike("nft_contract", nftContract);
-
-        const { data: sales, error: salesErr } = await salesQ;
-        if (salesErr) console.warn("[ActivityFeed] sales:", salesErr.message);
-
-        // ── Listings (list + delist events) ──────────────────────────────────
-        let listingsQ = supabase
-          .from("listings")
-          .select("listing_id, seller, nft_contract, token_id, price, active, tx_hash, created_at, updated_at")
-          .order("created_at", { ascending: false })
-          .limit(limit);
-
-        if (tokenId != null)   listingsQ = listingsQ.eq("token_id", tokenId);
-        if (nftContract)       listingsQ = listingsQ.ilike("nft_contract", nftContract);
-
-        const { data: listings, error: listErr } = await listingsQ;
-        if (listErr) console.warn("[ActivityFeed] listings:", listErr.message);
-
-        // ── Merge ─────────────────────────────────────────────────────────────
-        const events = [
-          // Sales
-          ...(sales || []).map(s => ({
-            type:      "sale",
-            label:     `#${s.token_id}`,
-            from:      s.seller,
-            to:        s.buyer,
-            // ✅ formatPrice divides by 1e6
-            price:     formatPrice(s.price),
-            time:      timeAgo(s.sold_at),
-            tx:        s.tx_hash,
-            tokenId:   s.token_id,
-            timestamp: new Date(s.sold_at || 0).getTime(),
-          })),
-
-          // Listings — create a "Listed" event on creation
-          ...(listings || []).map(l => ({
-            type:      l.active ? "listing" : "delist",
-            label:     `#${l.token_id}`,
-            from:      l.seller,
-            to:        null,
-            // ✅ Only show price on list events, not deList
-            price:     l.active ? formatPrice(l.price) : null,
-            time:      timeAgo(l.created_at),
-            tx:        l.tx_hash,
-            tokenId:   l.token_id,
-            timestamp: new Date(l.created_at || 0).getTime(),
-          })),
-        ]
-          .sort((a, b) => b.timestamp - a.timestamp)
-          .slice(0, limit);
-
-        if (!cancelled) {
-          setActivity(events);
-          setLoading(false);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e.message || "Failed to load activity");
-          setLoading(false);
-        }
-      }
+    if (nftContract) {
+      setContractAddr(nftContract.toLowerCase());
+      return;
     }
+    if (!collectionId) return;
 
-    load();
-    return () => { cancelled = true; };
-  }, [collectionId, nftContract, tokenId, limit]);
+    // collectionId might be a slug — resolve to contract_address
+    const isAddress = collectionId.startsWith("0x");
+    if (isAddress) {
+      setContractAddr(collectionId.toLowerCase());
+    } else {
+      supabase.from("collections").select("contract_address")
+        .eq("slug", collectionId).single()
+        .then(({ data }) => {
+          if (data?.contract_address) setContractAddr(data.contract_address.toLowerCase());
+        });
+    }
+  }, [collectionId, nftContract]);
 
-  // ── Realtime updates ─────────────────────────────────────────────────────────
+  async function loadActivity() {
+    if (!contractAddr && !tokenId) { setLoading(false); return; }
+    setLoading(true);
+
+    // ── Sales ─────────────────────────────────────────────────────────────
+    let salesQ = supabase.from("sales").select("*")
+      .order("sold_at", { ascending: false }).limit(limit);
+
+    // ✅ FIX: filter sales by contract address (was missing before)
+    if (contractAddr) salesQ = salesQ.eq("nft_contract", contractAddr);
+    if (tokenId != null) salesQ = salesQ.eq("token_id", tokenId);
+
+    const { data: sales } = await salesQ;
+
+    // ── Listings ──────────────────────────────────────────────────────────
+    let listQ = supabase.from("listings").select("*")
+      .order("updated_at", { ascending: false }).limit(limit);
+
+    if (contractAddr) listQ = listQ.eq("nft_contract", contractAddr);
+    if (tokenId != null) listQ = listQ.eq("token_id", tokenId);
+
+    const { data: listings } = await listQ;
+
+    // ── Merge + sort ──────────────────────────────────────────────────────
+    const events = [
+      ...(sales || []).map(s => ({
+        type:      "sale",
+        name:      `#${s.token_id}`,
+        from:      s.seller,
+        to:        s.buyer,
+        price:     s.price,           // raw — displayed via displayPrice()
+        time:      timeAgo(s.sold_at),
+        tx:        s.tx_hash,
+        tokenId:   s.token_id,
+        timestamp: new Date(s.sold_at || 0).getTime(),
+      })),
+      ...(listings || []).map(l => ({
+        type:      l.active ? "listing" : "delist",
+        name:      `#${l.token_id}`,
+        from:      l.seller,
+        to:        null,
+        price:     l.active ? l.price : null,
+        time:      timeAgo(l.updated_at || l.created_at),
+        tx:        l.tx_hash,
+        tokenId:   l.token_id,
+        timestamp: new Date(l.updated_at || l.created_at || 0).getTime(),
+      })),
+    ]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, limit);
+
+    setActivity(events);
+    setLoading(false);
+  }
+
   useEffect(() => {
-    if (!nftContract) return;
+    loadActivity();
+  }, [contractAddr, tokenId, limit]);
 
-    const channel = supabase
-      .channel(`activity-feed:${nftContract.toLowerCase()}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "sales" }, () => {
-        // Re-fetch on new sale
-        setLoading(true);
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "listings" }, () => {
-        setLoading(true);
-      })
+  // ── Realtime: re-fetch when a new sale or listing comes in ───────────────
+  useEffect(() => {
+    if (!contractAddr) return;
+
+    const salesChannel = supabase
+      .channel(`activity-sales-${contractAddr}`)
+      .on("postgres_changes", {
+        event: "*", schema: "public", table: "sales",
+        filter: `nft_contract=eq.${contractAddr}`,
+      }, () => loadActivity())
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, [nftContract]);
+    const listingsChannel = supabase
+      .channel(`activity-listings-${contractAddr}`)
+      .on("postgres_changes", {
+        event: "*", schema: "public", table: "listings",
+        filter: `nft_contract=eq.${contractAddr}`,
+      }, () => loadActivity())
+      .subscribe();
 
-  // Re-fetch when loading flips back to true (triggered by realtime)
-  useEffect(() => {
-    if (loading) {
-      // small debounce
-      const t = setTimeout(() => setLoading(false), 300);
-      return () => clearTimeout(t);
-    }
-  }, [loading]);
+    return () => {
+      supabase.removeChannel(salesChannel);
+      supabase.removeChannel(listingsChannel);
+    };
+  }, [contractAddr]);
 
   if (loading) {
     return (
@@ -166,20 +171,11 @@ export default function ActivityFeed({ collectionId, nftContract, tokenId, limit
     );
   }
 
-  if (error) {
-    return (
-      <div className="rounded-xl px-4 py-3 text-sm"
-        style={{ background: "rgba(239,68,68,0.1)", color: "#EF4444", border: "1px solid rgba(239,68,68,0.2)" }}>
-        Failed to load activity: {error}
-      </div>
-    );
-  }
-
   if (!activity.length) {
     return (
-      <div className="py-16 text-center rounded-3xl" style={{ border: "1px dashed rgba(255,255,255,0.06)" }}>
-        <div className="text-3xl mb-3">📋</div>
-        <p className="text-sm font-bold mb-1" style={{ color: "#e6edf3" }}>No activity yet</p>
+      <div className="py-16 text-center">
+        <div className="text-3xl mb-3">📊</div>
+        <div className="text-sm font-bold mb-1" style={{ color: "#e6edf3" }}>No activity yet</div>
         <p className="text-xs" style={{ color: "#9da7b3" }}>Sales and listings will appear here.</p>
       </div>
     );
@@ -187,61 +183,56 @@ export default function ActivityFeed({ collectionId, nftContract, tokenId, limit
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 pb-2 mb-1 text-[10px] font-bold uppercase tracking-widest"
-        style={{ color: "#6B7280", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-        <span className="w-14 text-center flex-shrink-0">Type</span>
-        <span className="flex-1">Item</span>
-        <span className="hidden sm:block w-40 flex-shrink-0">From / To</span>
-        <span className="w-24 text-right flex-shrink-0">Price</span>
-        <span className="w-16 text-right flex-shrink-0">Time</span>
+      {/* Header row */}
+      <div className="grid grid-cols-[80px_1fr_1fr_80px_80px] gap-3 px-4 pb-2 text-[10px] font-bold uppercase tracking-widest"
+        style={{ color: "#9da7b3", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <span>Type</span>
+        <span>Item</span>
+        <span className="hidden sm:block">Address</span>
+        <span>Price</span>
+        <span>Time</span>
       </div>
 
-      <div className="space-y-1">
+      <div className="space-y-0.5 mt-1">
         {activity.map((ev, i) => {
           const cfg = TYPE_CONFIG[ev.type] ?? TYPE_CONFIG.transfer;
+          const price = displayPrice(ev.price);
+
           return (
             <div key={i}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors cursor-default"
-              style={{ background: "rgba(22,29,40,0.5)" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "rgba(0,230,168,0.03)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "rgba(22,29,40,0.5)"; }}>
+              className="grid grid-cols-[80px_1fr_1fr_80px_80px] gap-3 items-center px-4 py-3 rounded-xl transition-colors"
+              style={{ background: "transparent" }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(34,211,238,0.03)"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
 
               {/* Type badge */}
-              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-md flex-shrink-0 w-14 text-center"
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md text-center w-fit"
                 style={{ background: cfg.bg, color: cfg.color }}>
                 {cfg.label}
               </span>
 
-              {/* Token */}
-              <span className="flex-1 text-xs font-semibold truncate font-mono" style={{ color: "#e6edf3" }}>
-                {ev.label}
+              {/* Token name */}
+              <span className="text-xs font-semibold font-mono truncate" style={{ color: "#e6edf3" }}>
+                {ev.name}
               </span>
 
               {/* From → To */}
-              <span className="text-[11px] font-mono hidden sm:flex items-center gap-1.5 flex-shrink-0 w-40" style={{ color: "#9da7b3" }}>
+              <span className="hidden sm:flex items-center gap-1 text-[10px] font-mono truncate" style={{ color: "#9da7b3" }}>
                 {shortenAddress(ev.from)}
-                {ev.to && (
-                  <>
-                    <ArrowRight size={9} />
-                    {shortenAddress(ev.to)}
-                  </>
-                )}
+                {ev.to && <><ArrowRight size={9} />{shortenAddress(ev.to)}</>}
               </span>
 
-              {/* ✅ Price — already divided by 1e6 in formatPrice */}
-              <span className="font-mono text-xs flex-shrink-0 w-24 text-right font-bold"
-                style={{ color: ev.price ? "#22d3ee" : "transparent" }}>
-                {ev.price ? `${ev.price} USD` : "—"}
+              {/* Price */}
+              <span className="text-xs font-mono font-bold" style={{ color: ev.type === "sale" ? "#22c55e" : "#22d3ee" }}>
+                {price ? `${price} USD` : "—"}
               </span>
 
-              {/* Time + tx link */}
-              <div className="flex items-center justify-end gap-1.5 flex-shrink-0 w-16">
-                <span className="text-[11px]" style={{ color: "#9da7b3" }}>{ev.time}</span>
+              {/* Time + tx */}
+              <div className="flex items-center gap-1.5 justify-end">
+                <span className="text-[10px]" style={{ color: "#9da7b3" }}>{ev.time}</span>
                 {ev.tx && (
                   <a href={`${EXPLORER_BASE}/tx/${ev.tx}`} target="_blank" rel="noreferrer"
-                    style={{ color: "#6B7280" }}
-                    onClick={e => e.stopPropagation()}>
+                    style={{ color: "#9da7b3" }}>
                     <ExternalLink size={10} />
                   </a>
                 )}
