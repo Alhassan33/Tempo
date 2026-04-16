@@ -1,85 +1,117 @@
+// hooks/useCollectionStats.ts
+// Reads live stats from Supabase: floor from listings, volume from sales.
+// This is what populates the stats cards on CollectionPage.
+
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 
-// 1. Updated Interface to include Volume and Royalties
-export interface CollectionStats {
-  totalSupply: number;
-  uniqueOwners: number;
-  floorPrice: number;
-  listedCount: number;
-  volume24h: number;    // Added
-  volumeTotal: number;  // Added
-  royaltyBps: number;   // Added
+interface CollectionStats {
+  floorPrice:    number | null;
+  totalVolume:   number;
+  volume24h:     number;
+  totalSales:    number;
+  sales24h:      number;
+  listedCount:   number;
+  owners:        number;
+  totalSupply:   number;
+  marketCap:     number | null;
 }
 
-export function useCollectionStats(contractAddress: string) {
-  const [stats, setStats] = useState<CollectionStats>({
-    totalSupply: 0,
-    uniqueOwners: 0,
-    floorPrice: 0,
-    listedCount: 0,
-    volume24h: 0,
-    volumeTotal: 0,
-    royaltyBps: 0
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+const EMPTY: CollectionStats = {
+  floorPrice: null, totalVolume: 0, volume24h: 0,
+  totalSales: 0, sales24h: 0, listedCount: 0,
+  owners: 0, totalSupply: 0, marketCap: null,
+};
+
+export function useCollectionStats(nftContract: string) {
+  const [stats,   setStats]   = useState<CollectionStats>(EMPTY);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!contractAddress || contractAddress === 'undefined' || contractAddress === 'null') {
-      setLoading(false);
-      return;
-    }
-    
-    async function fetch() {
-      setLoading(true);
-      setError(null);
-      
+    if (!nftContract) return;
+    let cancelled = false;
+    setLoading(true);
+
+    async function load() {
       try {
-        // 2. The RPC call stays the same, but we will now map more fields from the response
-        const { data, error: rpcError } = await supabase
-          .rpc('get_collection_stats', {
-            collection_address: contractAddress.toLowerCase()
-          });
-        
-        if (rpcError) {
-          throw new Error(rpcError.message);
-        }
-        
-        if (data && Array.isArray(data) && data.length > 0) {
-          const row = data[0];
-          
+        const since24h = new Date(Date.now() - 86_400_000).toISOString();
+
+        // Run all queries in parallel
+        const [
+          { data: floorRow },
+          { count: listed },
+          { data: allSales },
+          { data: sales24hData },
+          { count: ownerCount },
+          { data: colRow },
+        ] = await Promise.all([
+          // Floor price = lowest active listing
+          supabase.from("listings")
+            .select("price")
+            .ilike("nft_contract", nftContract)
+            .eq("active", true)
+            .order("price", { ascending: true })
+            .limit(1),
+
+          // Listed count
+          supabase.from("listings")
+            .select("*", { count: "exact", head: true })
+            .ilike("nft_contract", nftContract)
+            .eq("active", true),
+
+          // All sales (for total volume)
+          supabase.from("sales")
+            .select("price")
+            .ilike("nft_contract", nftContract),
+
+          // 24h sales
+          supabase.from("sales")
+            .select("price")
+            .ilike("nft_contract", nftContract)
+            .gte("sold_at", since24h),
+
+          // Unique owners
+          supabase.from("nfts")
+            .select("owner_address", { count: "exact", head: true })
+            .ilike("contract_address", nftContract)
+            .neq("owner_address", "0x0000000000000000000000000000000000000000"),
+
+          // Collection metadata
+          supabase.from("collections")
+            .select("total_supply, floor_price")
+            .ilike("contract_address", nftContract)
+            .single(),
+        ]);
+
+        const floorRaw    = floorRow?.[0]?.price ?? null;
+        const totalVolRaw = (allSales || []).reduce((s, r) => s + Number(r.price || 0), 0);
+        const vol24hRaw   = (sales24hData || []).reduce((s, r) => s + Number(r.price || 0), 0);
+        const supply      = colRow?.total_supply || 0;
+        const marketCap   = floorRaw && supply ? Number(floorRaw) * supply : null;
+
+        if (!cancelled) {
           setStats({
-            totalSupply: Number(row.total_supply) || 0,
-            uniqueOwners: Number(row.unique_owners) || 0,
-            floorPrice: Number(row.floor_price) || 0,
-            listedCount: Number(row.listed_count) || 0,
-            // 3. Map the volume and royalty fields from your Supabase table columns
-            volume24h: Number(row.volume_24h) || 0,
-            volumeTotal: Number(row.volume_total) || 0,
-            royaltyBps: Number(row.royalty_bps) || 0
-          });
-        } else {
-          setStats({
-            totalSupply: 0,
-            uniqueOwners: 0,
-            floorPrice: 0,
-            listedCount: 0,
-            volume24h: 0,
-            volumeTotal: 0,
-            royaltyBps: 0
+            floorPrice:  floorRaw,
+            totalVolume: totalVolRaw,
+            volume24h:   vol24hRaw,
+            totalSales:  (allSales || []).length,
+            sales24h:    (sales24hData || []).length,
+            listedCount: listed || 0,
+            owners:      ownerCount || 0,
+            totalSupply: supply,
+            marketCap,
           });
         }
-      } catch (err: any) {
-        console.error('[useCollectionStats] Error:', err);
-        setError(err.message || 'Failed to fetch collection stats');
+      } catch (e) {
+        console.error("[useCollectionStats]", e);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-    
-    fetch();
-  }, [contractAddress]);
 
-  return { stats, loading, error };
+    load();
+    return () => { cancelled = true; };
+  }, [nftContract]);
+
+  return { stats, loading };
 }
