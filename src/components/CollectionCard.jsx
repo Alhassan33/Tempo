@@ -1,5 +1,7 @@
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle2, ChevronUp, ChevronDown } from "lucide-react";
+import { CheckCircle2, ChevronUp, ChevronDown, Loader2 } from "lucide-react";
+import { readContract } from '@wagmi/core'; // Ensure wagmi is configured
 import NFTImage from "./NFTImage.jsx";
 
 // Standardized USD formatter for Tempo
@@ -12,10 +14,59 @@ function formatUSD(v) {
   }).format(v);
 }
 
+// Minimal ABI to read from the contract
+const MIN_ABI = [
+  { name: 'name', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
+  { name: 'contractURI', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] }
+];
+
 export default function CollectionCard({ collection, rank }) {
   const navigate = useNavigate();
+  const [liveMeta, setLiveMeta] = useState(null);
+  const [isLifting, setIsLifting] = useState(!collection.image || !collection.name);
+
   const change = collection.change24h ?? 0;
   const isPos = change >= 0;
+
+  useEffect(() => {
+    // If the collection is missing branding, lift it from the chain
+    if (!collection.image || !collection.name) {
+      const liftFromChain = async () => {
+        try {
+          // 1. Fetch Name and ContractURI in parallel
+          const [onChainName, cURI] = await Promise.all([
+            readContract({ address: collection.nft_contract, abi: MIN_ABI, functionName: 'name' }),
+            readContract({ address: collection.nft_contract, abi: MIN_ABI, functionName: 'contractURI' })
+          ]);
+
+          // 2. Fetch the JSON metadata from IPFS/URL
+          let metadata = {};
+          if (cURI) {
+            const url = cURI.startsWith('ipfs://') 
+              ? cURI.replace('ipfs://', 'https://ipfs.io/ipfs/') 
+              : cURI;
+            const res = await fetch(url);
+            metadata = await res.json();
+          }
+
+          setLiveMeta({
+            name: onChainName || metadata.name,
+            image: metadata.image || metadata.logo_url || metadata.banner_image_url
+          });
+        } catch (err) {
+          console.error("Failed to lift metadata for:", collection.nft_contract);
+        } finally {
+          setIsLifting(false);
+        }
+      };
+
+      liftFromChain();
+    }
+  }, [collection]);
+
+  // Priority: Prop Data > Lifted Data > Placeholder
+  const displayImage = collection.image || liveMeta?.image;
+  const displayName = collection.name || liveMeta?.name || "Loading...";
 
   return (
     <tr
@@ -30,19 +81,25 @@ export default function CollectionCard({ collection, rank }) {
       {/* Collection Info */}
       <td className="py-4 px-4">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl flex-shrink-0 overflow-hidden bg-[#161d28] border border-white/10">
-            <NFTImage
-              src={collection.image}
-              alt={collection.name}
-              className="w-full h-full object-cover"
-            />
+          <div className="w-11 h-11 rounded-xl flex-shrink-0 overflow-hidden bg-[#161d28] border border-white/10 relative">
+            {isLifting ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                <Loader2 size={14} className="animate-spin text-cyan-400" />
+              </div>
+            ) : (
+              <NFTImage
+                src={displayImage}
+                alt={displayName}
+                className="w-full h-full object-cover transition-transform group-hover:scale-110"
+              />
+            )}
           </div>
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-sm font-bold text-white uppercase italic tracking-tighter">
-                {collection.name}
+                {displayName}
               </span>
-              {collection.verified && <CheckCircle2 size={13} className="text-cyan-400" />}
+              {(collection.verified || liveMeta) && <CheckCircle2 size={13} className="text-cyan-400" />}
             </div>
             <span className="text-[10px] font-black uppercase tracking-widest text-gray-600">
               {(collection.itemCount ?? collection.supply ?? 0).toLocaleString()} items
