@@ -318,10 +318,13 @@ export default function StudioPage() {
         twitter_url:       form.twitter || null,
       }, { onConflict: "contract_address" });
 
-      // ── Redirect to manage page ───────────────────────────────────────────
-      setTimeout(() => {
-        navigate(`/studio/manage/${newContractAddress}`);
-      }, 1500);
+      // ── Success — stop spinner, show done state, then redirect ──────────
+      setDeploying(false);  // ← stops the spinner so step 2 shows ✓ state
+
+      // Small delay so the "Collection Deployed!" screen is visible
+      // and DB writes have settled before the manager page queries them
+      await new Promise(r => setTimeout(r, 1800));
+      navigate(`/studio/manage/${newContractAddress}`);
 
     } catch (e) {
       setError(e?.shortMessage || e?.message?.slice(0, 100) || "Deployment failed");
