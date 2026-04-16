@@ -421,19 +421,16 @@ function OwnersTab({ contractAddress, totalSupply }) {
     </div>
   );
 }
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function CollectionPage() {
   const { id } = useParams();
-  const [viewMode,         setViewMode]         = useState(VIEW.GRID);
-  const [tab,              setTab]              = useState("Items");
-  const [buyModal,         setBuyModal]         = useState(null);
-  const [liveFlash,        setLiveFlash]        = useState(false);
-  const [traitSelected,    setTraitSelected]    = useState({});
-  const [showFilter,       setShowFilter]       = useState(false);
-  const [search,           setSearch]           = useState("");
-  const [priceSort,        setPriceSort]        = useState("asc");
-  const [collectionTraits, setCollectionTraits] = useState({});
-  const traitAccumRef = useRef({});
+  const [viewMode,     setViewMode]     = useState(VIEW.GRID);
+  const [tab,          setTab]          = useState("Items");
+  const [buyModal,     setBuyModal]     = useState(null);
+  const [showFloorBar, setShowFloorBar] = useState(true);
+  const [refreshing,   setRefreshing]   = useState(false);
+  const lastScrollY = useRef(0);
 
   const { collection, isLoading: colLoading } = useCollection(id);
   const { stats: rpcStats } = useCollectionStats(collection?.contract_address || "");
@@ -441,31 +438,30 @@ export default function CollectionPage() {
   const { listings, isLoading: listingsLoading } = useRealtimeListings(contractAddr);
 
   const activeListings = useMemo(() =>
-    (listings || []).filter(l => l.active).sort((a, b) =>
-      priceSort === "asc" ? Number(a.price) - Number(b.price) : Number(b.price) - Number(a.price)
-    ),
-  [listings, priceSort]);
+    (listings || []).filter(l => l.active).sort((a, b) => Number(a.price) - Number(b.price)),
+  [listings]);
 
-  // ✅ Listed token IDs — used to EXCLUDE from Items tab
-  const listedIds = useMemo(() => new Set(activeListings.map(l => String(l.token_id))), [activeListings]);
+  const listedIds = useMemo(() =>
+    new Set(activeListings.map(l => String(l.token_id))),
+  [activeListings]);
 
   const [listedTokensWithImages, setListedTokensWithImages] = useState([]);
-  const [unlistedTokens,  setUnlistedTokens]  = useState([]);
-  const [tokensLoading,   setTokensLoading]   = useState(false);
-  const [page,            setPage]            = useState(1);
-  const [hasMore,         setHasMore]         = useState(true);
+  const [unlistedTokens, setUnlistedTokens] = useState([]);
+  const [tokensLoading,  setTokensLoading]  = useState(false);
+  const [page,           setPage]           = useState(1);
+  const [hasMore,        setHasMore]        = useState(true);
   const loaderRef = useRef(null);
 
-  // Realtime flash
   useEffect(() => {
-    if (!contractAddr) return;
-    const ch = supabase
-      .channel(`col-live:${contractAddr}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "listings", filter: `nft_contract=eq.${contractAddr}` },
-        () => { setLiveFlash(true); setTimeout(() => setLiveFlash(false), 1500); })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [contractAddr]);
+    function onScroll() {
+      const y = window.scrollY;
+      if (y > lastScrollY.current && y > 150) setShowFloorBar(false);
+      else setShowFloorBar(true);
+      lastScrollY.current = y;
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const stats = useMemo(() => {
     const supply     = rpcStats.totalSupply  || collection?.total_supply || 0;
@@ -480,11 +476,10 @@ export default function CollectionPage() {
       vol24h:    collection?.volume_24h   ? `${(Number(collection.volume_24h)   / 1e6).toFixed(2)} USD` : "0 USD",
       totalVol:  collection?.volume_total ? `${(Number(collection.volume_total) / 1e6).toFixed(2)} USD` : "0 USD",
       mktCap:    floorDisplay && supply   ? `${((Number(floorRaw) / 1e6) * supply).toLocaleString()} USD` : "—",
-      owners, ownerPct: supply && owners  ? `${((owners / supply) * 100).toFixed(1)}%` : "0%",
-      listed, listedPct: supply           ? `${((listed / supply) * 100).toFixed(1)}% listed` : "",
-      supply: supply?.toLocaleString()    || "0",
-      royalties: royaltyBps               ? `${(royaltyBps / 100).toFixed(1)}%` : "0%",
-      totalSupplyRaw: supply,
+      owners, ownerPct: supply && owners ? `${((owners / supply) * 100).toFixed(1)}%` : "0%",
+      listed, listedPct: supply ? `${((listed / supply) * 100).toFixed(1)}% listed` : "",
+      supply: supply?.toLocaleString() || "0",
+      royalties: royaltyBps ? `${(royaltyBps / 100).toFixed(1)}%` : "0%",
     };
   }, [collection, activeListings, rpcStats]);
 
@@ -496,23 +491,32 @@ export default function CollectionPage() {
     return base;
   }, [collection?.metadata_base_uri]);
 
-  // Fetch listed tokens from IPFS — authoritative name + image
+  // ✅ Fetch IPFS images for listed tokens so they show in the grid
   useEffect(() => {
     if (!ipfsBase || !activeListings.length) { setListedTokensWithImages([]); return; }
     let cancelled = false;
+
     Promise.all(activeListings.map(async listing => {
+      if (listing.image || listing.image_url) {
+        return { tokenId: String(listing.token_id), token_id: listing.token_id,
+          name: listing.name || `${collection?.name} #${listing.token_id}`,
+          image: listing.image || listing.image_url };
+      }
       try {
         const res  = await fetch(`${ipfsBase}${listing.token_id}.json`, { cache: "force-cache" });
         const json = await res.json();
-        return { ...listing, tokenId: String(listing.token_id), name: json.name || `#${listing.token_id}`, image: extractImageUrl(json) || "" };
+        return { tokenId: String(listing.token_id), token_id: listing.token_id,
+          name: json.name || `${collection?.name} #${listing.token_id}`,
+          image: extractImageUrl(json) };
       } catch {
-        return { ...listing, tokenId: String(listing.token_id), name: listing.name || `#${listing.token_id}`, image: listing.image || "" };
+        return { tokenId: String(listing.token_id), token_id: listing.token_id,
+          name: listing.name || `${collection?.name} #${listing.token_id}`, image: "" };
       }
-    })).then(r => { if (!cancelled) setListedTokensWithImages(r); });
-    return () => { cancelled = true; };
-  }, [activeListings, ipfsBase]);
+    })).then(results => { if (!cancelled) setListedTokensWithImages(results); });
 
-  // Fetch unlisted tokens — skip any that are in listedIds
+    return () => { cancelled = true; };
+  }, [activeListings, ipfsBase, collection?.name]);
+
   const fetchPage = useCallback(async (pageNum) => {
     if (!ipfsBase) return;
     const supply = rpcStats.totalSupply || collection?.total_supply || 2000;
@@ -520,47 +524,28 @@ export default function CollectionPage() {
     const end    = Math.min(start + PAGE_SIZE - 1, supply);
     if (start > supply) { setHasMore(false); return; }
     setTokensLoading(true);
-
     const results = await Promise.all(
       Array.from({ length: end - start + 1 }, (_, i) => start + i).map(async tokenId => {
-        // ✅ Skip listed tokens — they show in Listings tab only
         if (listedIds.has(String(tokenId))) return null;
         try {
           const res  = await fetch(`${ipfsBase}${tokenId}.json`, { cache: "force-cache" });
           const json = await res.json();
-          const image = extractImageUrl(json);
-          const attrs = json.attributes || [];
-
-          attrs.forEach(a => {
-            if (!a.trait_type || a.value === undefined) return;
-            const t = a.trait_type;
-            const v = String(a.value);
-            if (!traitAccumRef.current[t]) traitAccumRef.current[t] = {};
-            traitAccumRef.current[t][v] = (traitAccumRef.current[t][v] || 0) + 1;
-          });
-
-          return { tokenId: String(tokenId), token_id: tokenId, name: json.name || `#${tokenId}`, image, attributes: attrs };
+          return { tokenId: String(tokenId), name: json.name || `${collection?.name} #${tokenId}`, image: extractImageUrl(json) };
         } catch {
-          return { tokenId: String(tokenId), token_id: tokenId, name: `#${tokenId}`, image: "", attributes: [] };
+          return { tokenId: String(tokenId), name: `${collection?.name} #${tokenId}`, image: "" };
         }
       })
     );
-
-    const traitArr = {};
-    Object.entries(traitAccumRef.current).forEach(([trait, vals]) => {
-      traitArr[trait] = Object.entries(vals).map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count);
-    });
-    setCollectionTraits(traitArr);
-
     setUnlistedTokens(prev => pageNum === 1 ? results.filter(Boolean) : [...prev, ...results.filter(Boolean)]);
     setHasMore(end < supply);
     setTokensLoading(false);
   }, [ipfsBase, collection, listedIds, rpcStats.totalSupply]);
 
   useEffect(() => {
-    if (ipfsBase) { setUnlistedTokens([]); setPage(1); setHasMore(true); traitAccumRef.current = {}; setCollectionTraits({}); fetchPage(1); }
+    if (ipfsBase) { setUnlistedTokens([]); setPage(1); setHasMore(true); fetchPage(1); }
   }, [ipfsBase, fetchPage]);
 
+  // Re-fetch when listing count changes (new listing appeared)
   const listedCount = listedIds.size;
   useEffect(() => {
     if (ipfsBase && listedCount >= 0) { setUnlistedTokens([]); setPage(1); setHasMore(true); fetchPage(1); }
@@ -577,52 +562,36 @@ export default function CollectionPage() {
     return () => obs.disconnect();
   }, [hasMore, tokensLoading, tab]);
 
-  // ✅ Items tab = UNLISTED only, filtered by search + traits
-  const filteredItems = useMemo(() => {
-    const safeSelected = traitSelected || {};
-    const hasFilter = Object.values(safeSelected).some(v => v?.length > 0);
-    const hasSearch = search.trim().length > 0;
-    if (!hasFilter && !hasSearch) return unlistedTokens;
-    return unlistedTokens.filter(token => {
-      if (hasSearch) {
-        const q = search.toLowerCase();
-        if (!(token.name || "").toLowerCase().includes(q) && !String(token.token_id).includes(q)) return false;
-      }
-      if (hasFilter) {
-        return Object.entries(safeSelected).every(([trait, vals]) => {
-          if (!vals?.length) return true;
-          return (token.attributes || []).some(a => a.trait_type === trait && vals.includes(String(a.value)));
-        });
-      }
-      return true;
-    });
-  }, [unlistedTokens, traitSelected, search]);
+  // Manual refresh
+  async function handleRefresh() {
+    setRefreshing(true);
+    setUnlistedTokens([]);
+    setListedTokensWithImages([]);
+    setPage(1);
+    setHasMore(true);
+    await fetchPage(1);
+    setRefreshing(false);
+  }
 
-  // ✅ Listings tab = active listings only, filtered by search
-  const filteredListings = useMemo(() => {
-    if (!search.trim()) return listedTokensWithImages;
-    const q = search.toLowerCase();
-    return listedTokensWithImages.filter(t => (t.name || "").toLowerCase().includes(q) || String(t.token_id).includes(q));
-  }, [listedTokensWithImages, search]);
-
+  // Grid layout based on view mode
   const gridClass = useMemo(() => {
     if (viewMode === VIEW.LIST)   return "flex flex-col gap-2";
-    if (viewMode === VIEW.SINGLE) return "grid grid-cols-1 gap-4 max-w-xs mx-auto";
-    return "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4";
+    if (viewMode === VIEW.SINGLE) return "grid grid-cols-1 sm:grid-cols-1 gap-4 max-w-sm mx-auto";
+    return "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4";
   }, [viewMode]);
 
   if (colLoading) return (
     <div className="flex items-center justify-center min-h-[60vh]">
-      <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "#00E6A8", borderTopColor: "transparent" }} />
+      <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin"
+        style={{ borderColor: "#00E6A8", borderTopColor: "transparent" }} />
     </div>
   );
-
-  const showSidebar = tab === "Items" && showFilter;
 
   return (
     <>
       <style>{`.nft-card:hover .buy-slide { transform: translateY(0) !important; }`}</style>
-      <div className="fade-up min-h-screen pb-20" style={{ background: "#0A0F14" }}>
+
+      <div className="fade-up min-h-screen pb-28" style={{ background: "#0A0F14" }}>
 
         {/* Banner */}
         <div className="relative h-56 w-full overflow-hidden">
@@ -634,199 +603,179 @@ export default function CollectionPage() {
 
         <div className="px-4 sm:px-6 max-w-7xl mx-auto -mt-16 relative z-10">
 
-          {/* Header */}
+          {/* ─── Collection Header ─────────────────────────────────────────────── */}
           <div className="flex flex-col md:flex-row md:items-end gap-5 mb-8">
             <div className="w-28 h-28 rounded-3xl overflow-hidden flex-shrink-0"
               style={{ border: "4px solid #0A0F14", background: "#11161D" }}>
               <NFTImage src={collection?.logo_url} className="w-full h-full object-cover" />
             </div>
+
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-1">
-                <h1 className="text-3xl font-bold tracking-tight" style={{ color: "#EDEDED" }}>{collection?.name}</h1>
+                <h1 className="text-3xl font-bold tracking-tight" style={{ color: "#EDEDED" }}>
+                  {collection?.name}
+                </h1>
                 {collection?.verified && <CheckCircle2 size={22} style={{ color: "#00E6A8" }} />}
               </div>
+
+              {/* ✅ Creator + all socials from Supabase */}
               <div className="flex items-center flex-wrap gap-x-4 gap-y-1 mb-2">
-                <span className="text-sm font-medium" style={{ color: "#00E6A8" }}>By {collection?.creator_name || "Tempo Creator"}</span>
+                <span className="text-sm font-medium" style={{ color: "#00E6A8" }}>
+                  By {collection?.creator_name || "Tempo Creator"}
+                </span>
+
                 <div className="flex items-center gap-3" style={{ color: "#9CA3AF" }}>
-                  {collection?.twitter_url && <a href={collection.twitter_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs hover:text-white"><Twitter size={15} /><span className="hidden sm:inline">X</span></a>}
-                  {collection?.discord_url && <a href={collection.discord_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs hover:text-white"><MessageCircle size={15} /><span className="hidden sm:inline">Discord</span></a>}
-                  {collection?.website_url && <a href={collection.website_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs hover:text-white"><Globe size={15} /><span className="hidden sm:inline">Website</span></a>}
-                  <a href={`${EXPLORER}/address/${collection?.contract_address}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs hover:text-white"><ExternalLink size={15} /><span className="hidden sm:inline">Explorer</span></a>
+                  {/* X / Twitter */}
+                  {collection?.twitter_url && (
+                    <a href={collection.twitter_url} target="_blank" rel="noreferrer"
+                      title="X (Twitter)"
+                      className="flex items-center gap-1 text-xs hover:text-white transition-colors">
+                      <Twitter size={15} />
+                      <span className="hidden sm:inline">X</span>
+                    </a>
+                  )}
+                  {/* Discord */}
+                  {collection?.discord_url && (
+                    <a href={collection.discord_url} target="_blank" rel="noreferrer"
+                      title="Discord"
+                      className="flex items-center gap-1 text-xs hover:text-white transition-colors">
+                      <MessageCircle size={15} />
+                      <span className="hidden sm:inline">Discord</span>
+                    </a>
+                  )}
+                  {/* Website */}
+                  {collection?.website_url && (
+                    <a href={collection.website_url} target="_blank" rel="noreferrer"
+                      title="Website"
+                      className="flex items-center gap-1 text-xs hover:text-white transition-colors">
+                      <Globe size={15} />
+                      <span className="hidden sm:inline">Website</span>
+                    </a>
+                  )}
+                  {/* Tempo Explorer */}
+                  <a href={`${EXPLORER_BASE}/address/${collection?.contract_address}`}
+                    target="_blank" rel="noreferrer"
+                    title="View on Tempo Explorer"
+                    className="flex items-center gap-1 text-xs hover:text-white transition-colors">
+                    <ExternalLink size={15} />
+                    <span className="hidden sm:inline">Tempo Scan</span>
+                  </a>
                 </div>
               </div>
-              {collection?.description && <p className="text-sm line-clamp-2" style={{ color: "#9CA3AF" }}>{collection.description}</p>}
+
+              {collection?.description && (
+                <p className="text-sm line-clamp-2" style={{ color: "#9CA3AF" }}>
+                  {collection.description}
+                </p>
+              )}
             </div>
           </div>
 
           {/* Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">
-            <StatItem label="Floor Price"  value={stats.floor} />
-            <StatItem label="Top Offer"    value={stats.topOffer} />
-            <StatItem label="24H Volume"   value={stats.vol24h} />
-            <StatItem label="Total Volume" value={stats.totalVol} />
-            <StatItem label="Market Cap"   value={stats.mktCap} />
-            <StatItem label="Owners"       value={stats.owners}  subValue={stats.ownerPct} />
-            <StatItem label="Listed"       value={stats.listed}  subValue={stats.listedPct} />
-            <StatItem label="Supply"       value={stats.supply} />
-            <StatItem label="Royalties"    value={stats.royalties} />
+            <StatItem label="Floor Price" value={stats.floor} />
+            <StatItem label="Top Offer"   value={stats.topOffer} />
+            <StatItem label="24H VOL"     value={stats.vol24h} />
+            <StatItem label="Total VOL"   value={stats.totalVol} />
+            <StatItem label="Market Cap"  value={stats.mktCap} />
+            <StatItem label="Owners"      value={stats.owners} subValue={stats.ownerPct} />
+            <StatItem label="Listed"      value={stats.listed} subValue={stats.listedPct} />
+            <StatItem label="Supply"      value={stats.supply} />
+            <StatItem label="Royalties"   value={stats.royalties} />
           </div>
 
-          {/* ── TABS row only ── */}
-          <div className="border-b" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-            <div className="flex gap-0 overflow-x-auto">
+          {/* ─── Tabs + Unified View Controls ─────────────────────────────────── */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b mb-6"
+            style={{ borderColor: "rgba(255,255,255,0.05)" }}>
+            <div className="flex gap-1">
               {TABS.map(t => (
-                <button key={t} onClick={() => { setTab(t); setSearch(""); }}
-                  className="flex items-center gap-1.5 px-4 pb-4 text-sm font-medium uppercase tracking-widest whitespace-nowrap"
-                  style={{ background: "none", border: "none", borderBottom: tab === t ? "2px solid #00E6A8" : "2px solid transparent", color: tab === t ? "#00E6A8" : "#9CA3AF", cursor: "pointer" }}>
-                  {t === "Analytics" && <BarChart2 size={13} />}
-                  {t === "Owners"    && <Users size={13} />}
-                  {t}
-                  {t === "Listings" && activeListings.length > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-md ml-0.5"
-                      style={{ background: "rgba(0,230,168,0.12)", color: "#00E6A8" }}>
-                      {activeListings.length}
-                    </span>
-                  )}
+                <button key={t} onClick={() => setTab(t)}
+                  className="px-4 pb-4 text-sm font-medium uppercase tracking-widest transition-all"
+                  style={{
+                    background: "none", border: "none",
+                    borderBottom: tab === t ? "2px solid #00E6A8" : "2px solid transparent",
+                    color: tab === t ? "#00E6A8" : "#9CA3AF", cursor: "pointer",
+                  }}>
+                  {t === "Analytics"
+                    ? <span className="flex items-center gap-1.5"><BarChart2 size={13} />{t}</span>
+                    : t}
                 </button>
               ))}
             </div>
+
+            {/* ✅ Single pill: [Single | Grid | List | Refresh] */}
+            {tab === "Items" && (
+              <div className="pb-3 sm:pb-1">
+                <ViewControls
+                  current={viewMode}
+                  onChange={setViewMode}
+                  onRefresh={handleRefresh}
+                  refreshing={refreshing}
+                />
+              </div>
+            )}
           </div>
 
-          {/* ── TOOLBAR row — separate from tabs ── */}
-          {(tab === "Items" || tab === "Listings") && (
-            <div className="flex items-center gap-2 py-4 flex-wrap">
-              {/* Live dot */}
-              <div className="flex items-center gap-1.5 mr-1 flex-shrink-0">
-                <div className="w-2 h-2 rounded-full animate-pulse"
-                  style={{ background: liveFlash ? "#22C55E" : "#00E6A8", boxShadow: liveFlash ? "0 0 6px #22C55E" : "none", transition: "all 0.3s" }} />
-                <span className="text-[10px] font-medium" style={{ color: "#9CA3AF" }}>Live</span>
+          {/* Items */}
+          {tab === "Items" && (
+            <>
+              <div className={gridClass}>
+                {listedTokensWithImages.map((token, i) => (
+                  <NFTCard
+                    key={`listed-${token.token_id}`}
+                    token={token}
+                    collectionName={collection?.name}
+                    slug={id}
+                    listing={activeListings[i]}
+                    viewMode={viewMode}
+                    onBuy={setBuyModal}
+                  />
+                ))}
+                {unlistedTokens.map(token => (
+                  <NFTCard
+                    key={`unlisted-${token.tokenId}`}
+                    token={token}
+                    collectionName={collection?.name}
+                    slug={id}
+                    listing={null}
+                    viewMode={viewMode}
+                    onBuy={null}
+                  />
+                ))}
+                {(tokensLoading || refreshing) && Array(10).fill(0).map((_, i) => <CardSkeleton key={`sk-${i}`} />)}
               </div>
-
-              {/* Search */}
-              <div className="relative flex-1 min-w-[160px] max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" size={13} style={{ color: "#9CA3AF" }} />
-                <input type="text" placeholder={tab === "Listings" ? "Search listings..." : "Search items..."}
-                  value={search} onChange={e => setSearch(e.target.value)}
-                  className="h-9 w-full pl-8 pr-3 rounded-xl text-xs outline-none"
-                  style={{ background: "#161d28", border: "1px solid rgba(255,255,255,0.08)", color: "#e6edf3" }}
-                  onFocus={e => e.target.style.borderColor = "#00E6A8"}
-                  onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.08)"} />
-              </div>
-
-              {/* Trait filter toggle — Items only */}
-              {tab === "Items" && (
-                <button onClick={() => setShowFilter(f => !f)}
-                  className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-xs font-semibold flex-shrink-0"
-                  style={{ background: showFilter ? "rgba(0,230,168,0.1)" : "#161d28", color: showFilter ? "#00E6A8" : "#9CA3AF", border: showFilter ? "1px solid rgba(0,230,168,0.3)" : "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>
-                  <SlidersHorizontal size={13} />
-                  Filter
-                  {Object.values(traitSelected || {}).flat().length > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-md ml-1"
-                      style={{ background: "#00E6A8", color: "#0A0F14" }}>
-                      {Object.values(traitSelected).flat().length}
-                    </span>
-                  )}
-                </button>
+              <div ref={loaderRef} className="h-10" />
+              {!hasMore && (unlistedTokens.length + listedTokensWithImages.length) > 0 && (
+                <div className="text-center py-8 text-sm" style={{ color: "#9CA3AF" }}>
+                  All {unlistedTokens.length + listedTokensWithImages.length} items loaded
+                </div>
               )}
-
-              {/* Price sort — Listings only */}
-              {tab === "Listings" && (
-                <button onClick={() => setPriceSort(s => s === "asc" ? "desc" : "asc")}
-                  className="flex items-center gap-1 px-3 h-9 rounded-xl text-xs font-semibold flex-shrink-0"
-                  style={{ background: "#161d28", color: "#9CA3AF", border: "1px solid rgba(255,255,255,0.08)", cursor: "pointer" }}>
-                  Price {priceSort === "asc" ? "↑" : "↓"}
-                </button>
-              )}
-
-              {/* View toggle — far right */}
-              <div className="ml-auto flex-shrink-0">
-                <ViewToggle current={viewMode} onChange={setViewMode} />
-              </div>
-            </div>
+            </>
           )}
 
-          {/* ── Content ── */}
-          <div className={showSidebar ? "flex gap-6" : ""}>
+          {tab === "Activity" && (
+            <ActivityFeed collectionId={id} nftContract={collection?.contract_address} limit={40} />
+          )}
 
-            {showSidebar && (
-              <TraitFilter
-                traits={collectionTraits}
-                selected={traitSelected}
-                onChange={setTraitSelected}
-                onClear={() => setTraitSelected({})}
-              />
-            )}
-
-            <div className="flex-1 min-w-0">
-
-              {/* Items — unlisted only */}
-              {tab === "Items" && (
-                <>
-                  {filteredItems.length === 0 && !tokensLoading ? (
-                    <div className="py-16 text-center" style={{ color: "#9CA3AF" }}>
-                      {search ? "No items match your search." : "All items in this collection are listed for sale."}
-                    </div>
-                  ) : (
-                    <div className={gridClass}>
-                      {filteredItems.map(token => (
-                        <ItemCard key={`item-${token.tokenId}`} token={token} slug={id} viewMode={viewMode} />
-                      ))}
-                      {tokensLoading && Array(8).fill(0).map((_, i) => <CardSkeleton key={`sk-${i}`} />)}
-                    </div>
-                  )}
-                  <div ref={loaderRef} className="h-10" />
-                  {!hasMore && filteredItems.length > 0 && (
-                    <div className="text-center py-8 text-sm" style={{ color: "#9CA3AF" }}>
-                      {filteredItems.length} unlisted items
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Listings — active listed only */}
-              {tab === "Listings" && (
-                <>
-                  {listingsLoading ? (
-                    <div className="flex items-center justify-center py-16">
-                      <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "#00E6A8", borderTopColor: "transparent" }} />
-                    </div>
-                  ) : filteredListings.length === 0 ? (
-                    <div className="py-24 text-center rounded-3xl" style={{ border: "1px dashed rgba(255,255,255,0.06)" }}>
-                      <div className="text-4xl mb-3">🏷️</div>
-                      <div className="font-bold mb-1" style={{ color: "#EDEDED" }}>No active listings</div>
-                      <p className="text-sm" style={{ color: "#9CA3AF" }}>Be the first to list an NFT from this collection.</p>
-                    </div>
-                  ) : (
-                    <>
-                      <p className="text-sm mb-4" style={{ color: "#9CA3AF" }}>
-                        <span className="font-bold" style={{ color: "#EDEDED" }}>{filteredListings.length}</span> listing{filteredListings.length !== 1 ? "s" : ""} · {priceSort === "asc" ? "cheapest first" : "most expensive first"}
-                      </p>
-                      <div className={gridClass}>
-                        {filteredListings.map(listing => (
-                          <ListingCard key={listing.listing_id} listing={listing} slug={id} viewMode={viewMode} onBuy={setBuyModal} />
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-
-              {tab === "Activity"  && <ActivityFeed collectionId={id} nftContract={collection?.contract_address} limit={40} />}
-              {tab === "Analytics" && <div className="space-y-6"><PriceChart nftContract={contractAddr} /></div>}
-              {tab === "Owners"    && <OwnersTab contractAddress={contractAddr} totalSupply={stats.totalSupplyRaw} />}
+          {tab === "Analytics" && (
+            <div className="space-y-6">
+              <PriceChart nftContract={contractAddr} />
             </div>
-          </div>
+          )}
         </div>
       </div>
+
+      <FloorBar
+        activeListings={activeListings}
+        visible={showFloorBar && tab === "Items"}
+        onBuyFloor={setBuyModal}
+      />
 
       {buyModal && (
         <BuyModal
           listing={buyModal}
           onClose={() => setBuyModal(null)}
-          onSuccess={() => {
-            setListedTokensWithImages(prev => prev.filter(t => t.listing_id !== buyModal.listing_id));
-            setBuyModal(null);
-          }}
+          onSuccess={() => setBuyModal(null)}
         />
       )}
     </>
