@@ -1,16 +1,18 @@
 // pages/MintPage.jsx
-import { useState, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAccount, useChainId } from "wagmi";
 import {
   ArrowLeft, Globe, Twitter, ExternalLink, CheckCircle2,
   Clock, Minus, Plus, Zap, AlertCircle, Rocket, ShieldCheck,
-  Lock, Globe2
+  Lock, Users, Globe2
 } from "lucide-react";
+import { useFeaturedProjects } from "@/hooks/useSupabase";
 import {
   usePhases, useWalletMintState, useMint, useQuoteMintCost,
   usePathUSDBalance, phaseStatus, isPublicPhase, formatPrice,
-  PHASE_META, PLATFORM_FEE_RAW,
+  PHASE_OG, PHASE_WHITELIST, PHASE_PUBLIC, PHASE_META,
+  PLATFORM_FEE_RAW,
 } from "@/hooks/useMint";
 
 const EXPLORER_BASE = "https://explore.tempo.xyz";
@@ -41,7 +43,7 @@ function useCountdown(targetSec) {
 // ─── Phase Badge ──────────────────────────────────────────────────────────────
 function PhaseBadge({ status }) {
   const cfg = {
-    live:     { label: "● LIVE",     color: "#22C55E", bg: "rgba(34,197,94,0.12)",   border: "rgba(34,197,94,0.3)"   },
+    live:     { label: "● LIVE",     color: "#22d3ee", bg: "rgba(34,211,238,0.12)",   border: "rgba(34,211,238,0.3)"   },
     upcoming: { label: "◎ UPCOMING", color: "#9da7b3", bg: "rgba(157,167,179,0.08)",  border: "rgba(157,167,179,0.2)"  },
     ended:    { label: "✕ ENDED",    color: "#6b7280", bg: "rgba(107,114,128,0.08)",  border: "rgba(107,114,128,0.2)"  },
     inactive: { label: "— OFF",      color: "#6b7280", bg: "rgba(107,114,128,0.06)",  border: "rgba(107,114,128,0.15)" },
@@ -68,7 +70,7 @@ function MintProgress({ minted, max }) {
       </div>
       <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "#161d28" }}>
         <div className="h-full rounded-full transition-all duration-700"
-          style={{ width: pct + "%", background: pct >= 100 ? "#9da7b3" : "linear-gradient(90deg, #22C55E, #16a34a)" }} />
+          style={{ width: pct + "%", background: pct >= 100 ? "#9da7b3" : "linear-gradient(90deg, #22d3ee, #38bdf8)" }} />
       </div>
       <div className="text-[10px] mt-1 text-right font-mono" style={{ color: "#9da7b3" }}>{pct}% minted</div>
     </div>
@@ -87,11 +89,11 @@ function PhaseCard({ phase, phaseId, selected, onSelect }) {
       onClick={() => status === "live" && onSelect(phaseId)}
       className="rounded-xl p-4 transition-all duration-200"
       style={{
-        background: selected ? "rgba(34,197,94,0.06)" : "#161d28",
+        background: selected ? "rgba(34,211,238,0.06)" : "#161d28",
         border: selected
-          ? "1px solid rgba(34,197,94,0.4)"
+          ? "1px solid rgba(34,211,238,0.4)"
           : status === "live"
-          ? "1px solid rgba(34,197,94,0.15)"
+          ? "1px solid rgba(34,211,238,0.15)"
           : "1px solid rgba(255,255,255,0.06)",
         cursor: status === "live" ? "pointer" : "default",
         opacity: status === "ended" || status === "inactive" ? 0.45 : 1,
@@ -102,7 +104,7 @@ function PhaseCard({ phase, phaseId, selected, onSelect }) {
           <div className="flex items-center gap-2">
             {/* Phase type icon */}
             {isPublic
-              ? <Globe2 size={13} style={{ color: meta.color || "#22C55E" }} />
+              ? <Globe2 size={13} style={{ color: meta.color || "#22d3ee" }} />
               : <Lock size={13} style={{ color: meta.color || "#9da7b3" }} />}
             <span className="font-bold text-sm" style={{ color: "#e6edf3" }}>
               {phase.name || meta.name || ("Phase " + phaseId)}
@@ -119,7 +121,7 @@ function PhaseCard({ phase, phaseId, selected, onSelect }) {
       <div className="grid grid-cols-2 gap-2 mb-2">
         <div className="rounded-lg p-2" style={{ background: "#0b0f14" }}>
           <div className="text-[9px] uppercase tracking-wider mb-0.5" style={{ color: "#9da7b3" }}>Price</div>
-          <div className="text-sm font-mono font-bold" style={{ color: "#22C55E" }}>
+          <div className="text-sm font-mono font-bold" style={{ color: "#22d3ee" }}>
             {Number(phase.price) === 0 ? "FREE" : formatPrice(phase.price) + " USD"}
           </div>
         </div>
@@ -137,7 +139,7 @@ function PhaseCard({ phase, phaseId, selected, onSelect }) {
       {status === "upcoming" && phase.startTime > 0n && (
         <div className="flex items-center gap-1.5 text-xs mt-1" style={{ color: "#9da7b3" }}>
           <Clock size={11} />
-          Starts in <span className="font-mono font-bold" style={{ color: "#22C55E" }}>{countdown}</span>
+          Starts in <span className="font-mono font-bold" style={{ color: "#22d3ee" }}>{countdown}</span>
         </div>
       )}
     </div>
@@ -263,7 +265,7 @@ function MintWidget({ phase, phaseId, nftContract, onSuccess }) {
             {quoting ? (
               <span className="text-xs" style={{ color: "#9da7b3" }}>Calculating...</span>
             ) : (
-              <span className="font-mono text-xl font-bold" style={{ color: "#22C55E" }}>
+              <span className="font-mono text-xl font-bold" style={{ color: "#22d3ee" }}>
                 {totalDisplay} <span className="text-sm" style={{ color: "#9da7b3" }}>USD</span>
               </span>
             )}
@@ -276,7 +278,7 @@ function MintWidget({ phase, phaseId, nftContract, onSuccess }) {
         <div className="flex justify-between text-xs">
           <span style={{ color: "#9da7b3" }}>Your pathUSD balance</span>
           <span className={"font-mono font-bold " + (!hasEnoughBalance ? "text-red-400" : "")}
-            style={hasEnoughBalance ? { color: "#22C55E" } : {}}>
+            style={hasEnoughBalance ? { color: "#22d3ee" } : {}}>
             {formatPrice(balance)} USD
           </span>
         </div>
@@ -321,103 +323,23 @@ function MintWidget({ phase, phaseId, nftContract, onSuccess }) {
         disabled={!canMint && step !== "done"}
         className="w-full h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all"
         style={{
-          background: canMint || step === "done" ? "#22C55E" : "#161d28",
+          background: canMint || step === "done" ? "#22d3ee" : "#161d28",
           color:      canMint || step === "done" ? "#0b0f14" : "#6b7280",
           border:     canMint || step === "done" ? "none" : "1px solid rgba(255,255,255,0.06)",
           cursor:     canMint || step === "done" ? "pointer" : "not-allowed",
-          boxShadow:  canMint ? "0 0 20px rgba(34,197,94,0.25)" : "none",
+          boxShadow:  canMint ? "0 0 20px rgba(34,211,238,0.25)" : "none",
         }}>
         {busy && <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />}
         {btnLabel}
       </button>
 
       <div className="flex items-center justify-center gap-1.5 text-[10px]" style={{ color: "#9da7b3" }}>
-        <ShieldCheck size={12} style={{ color: "#22C55E" }} />
+        <ShieldCheck size={12} style={{ color: "#22d3ee" }} />
         Secured by Tempo Launchpad · Paid in pathUSD
       </div>
     </div>
   );
 }
-
-// ─── useProjectBySlug ─────────────────────────────────────────────────────────
-// Finds a project by slug, contract address, or id — any status.
-// Falls back to the collections table if nothing in projects matches.
-function useProjectBySlug(slug) {
-  const [project,  setProject]  = useState(null);
-  const [loading,  setLoading]  = useState(true);
-  const [notFound, setNotFound] = useState(false);
-
-  useEffect(() => {
-    if (!slug) { setLoading(false); setNotFound(true); return; }
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setNotFound(false);
-
-      // 1. Try projects table — all statuses, match id, slug, or contract_address
-      const isAddress = slug.startsWith("0x");
-      const addr      = isAddress ? slug.toLowerCase() : null;
-
-      const { data: rows } = await import("@/lib/supabase").then(m =>
-        m.supabase.from("projects").select("*")
-          .or(addr
-            ? `contract_address.ilike.${addr}`
-            : `id.eq.${slug},slug.eq.${slug},name.ilike.${slug}`)
-          .limit(1)
-      ).catch(() => ({ data: null }));
-
-      if (!cancelled && rows?.[0]) {
-        setProject(rows[0]);
-        setLoading(false);
-        return;
-      }
-
-      // 2. Try collections table (for externally added collections)
-      if (addr || !isAddress) {
-        const { data: cols } = await import("@/lib/supabase").then(m =>
-          m.supabase.from("collections").select("*")
-            .or(addr
-              ? `contract_address.ilike.${addr}`
-              : `slug.eq.${slug},name.ilike.${slug}`)
-            .limit(1)
-        ).catch(() => ({ data: null }));
-
-        if (!cancelled && cols?.[0]) {
-          // Wrap collection row as a project-like object
-          const col = cols[0];
-          setProject({
-            id:               col.slug || col.contract_address,
-            name:             col.name,
-            symbol:           "",
-            description:      col.description || "",
-            logo_url:         col.logo_url || null,
-            banner_url:       col.banner_url || null,
-            contract_address: col.contract_address,
-            max_supply:       col.total_supply || 0,
-            mint_price:       col.floor_price ? (Number(col.floor_price) / 1e6) : null,
-            website:          col.website_url || null,
-            twitter:          col.twitter_url || null,
-            status:           "live",
-          });
-          setLoading(false);
-          return;
-        }
-      }
-
-      if (!cancelled) {
-        setNotFound(true);
-        setLoading(false);
-      }
-    }
-
-    load();
-    return () => { cancelled = true; };
-  }, [slug]);
-
-  return { project, loading, notFound };
-}
-
 
 // ─── Main MintPage ────────────────────────────────────────────────────────────
 export default function MintPage() {
