@@ -97,7 +97,7 @@ function FeaturedHero({ project, onClick }) {
   return (
     <div onClick={() => onClick(project)}
       className="relative rounded-3xl overflow-hidden cursor-pointer group"
-      style={{ background: "#0d1219", border: "1px solid rgba(34,197,94,0.2)", minHeight: 400 }}>
+      style={{ background: "#0d1219", border: "1px solid rgba(34,211,238,0.2)", minHeight: 400 }}>
 
       {/* Full background banner */}
       <div className="absolute inset-0">
@@ -110,7 +110,7 @@ function FeaturedHero({ project, onClick }) {
       {/* Badges */}
       <div className="absolute top-4 left-4 flex items-center gap-2">
         <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold tracking-widest"
-          style={{ background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.4)", color: "#22C55E" }}>
+          style={{ background: "rgba(34,211,238,0.15)", border: "1px solid rgba(34,211,238,0.4)", color: "#22d3ee" }}>
           <Flame size={10} /> FEATURED
         </span>
         <PhaseBadge phase={phase} />
@@ -124,7 +124,7 @@ function FeaturedHero({ project, onClick }) {
             style={{ border: "3px solid rgba(255,255,255,0.1)", background: "#161d28" }}>
             {project.logo_url
               ? <img src={project.logo_url} alt={project.name} className="w-full h-full object-cover" />
-              : <div className="w-full h-full flex items-center justify-center text-2xl font-bold" style={{ color: "#22C55E" }}>{project.name[0]}</div>}
+              : <div className="w-full h-full flex items-center justify-center text-2xl font-bold" style={{ color: "#22d3ee" }}>{project.name[0]}</div>}
           </div>
 
           <div className="flex-1 min-w-0">
@@ -144,7 +144,7 @@ function FeaturedHero({ project, onClick }) {
               ].filter(Boolean).map(({ label, value }) => (
                 <div key={label}>
                   <div className="text-[9px] uppercase tracking-wider mb-0.5" style={{ color: "#9da7b3" }}>{label}</div>
-                  <div className="text-sm font-mono font-bold" style={{ color: label === "Starts In" || label === "Status" ? "#22C55E" : "#e6edf3" }}>{value}</div>
+                  <div className="text-sm font-mono font-bold" style={{ color: label === "Starts In" || label === "Status" ? "#22d3ee" : "#e6edf3" }}>{value}</div>
                 </div>
               ))}
             </div>
@@ -154,7 +154,7 @@ function FeaturedHero({ project, onClick }) {
           <button
             onClick={e => { e.stopPropagation(); onClick(project); }}
             className="flex-shrink-0 flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold transition-all"
-            style={{ background: phase === "live" ? "#22C55E" : "rgba(34,197,94,0.1)", color: phase === "live" ? "#0b0f14" : "#22C55E", border: phase === "live" ? "none" : "1px solid rgba(34,197,94,0.3)", cursor: "pointer" }}>
+            style={{ background: phase === "live" ? "#22d3ee" : "rgba(34,211,238,0.1)", color: phase === "live" ? "#0b0f14" : "#22d3ee", border: phase === "live" ? "none" : "1px solid rgba(34,211,238,0.3)", cursor: "pointer" }}>
             {phase === "live" ? "Mint Now" : phase === "allowlist" ? "Allowlist Mint" : "View Drop"}
             <ArrowRight size={14} />
           </button>
@@ -174,9 +174,9 @@ function ProjectCard({ project, onClick }) {
   return (
     <div onClick={() => onClick(project)}
       className="rounded-2xl overflow-hidden cursor-pointer group transition-all duration-200"
-      style={{ background: "#0d1219", border: `1px solid ${isLive ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.06)"}` }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(34,197,94,0.35)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = isLive ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.06)"; e.currentTarget.style.transform = "translateY(0)"; }}>
+      style={{ background: "#0d1219", border: `1px solid ${isLive ? "rgba(34,211,238,0.2)" : "rgba(255,255,255,0.06)"}` }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(34,211,238,0.35)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = isLive ? "rgba(34,211,238,0.2)" : "rgba(255,255,255,0.06)"; e.currentTarget.style.transform = "translateY(0)"; }}>
 
       {/* Banner */}
       <div className="relative h-36 overflow-hidden" style={{ background: "#161d28" }}>
@@ -202,7 +202,7 @@ function ProjectCard({ project, onClick }) {
             style={{ border: "2px solid #0d1219", background: "#161d28" }}>
             {project.logo_url
               ? <img src={project.logo_url} alt={project.name} className="w-full h-full object-cover" />
-              : <div className="w-full h-full flex items-center justify-center font-bold text-sm" style={{ color: "#22C55E" }}>{project.name[0]}</div>}
+              : <div className="w-full h-full flex items-center justify-center font-bold text-sm" style={{ color: "#22d3ee" }}>{project.name[0]}</div>}
           </div>
           <div className="flex-1 min-w-0 pt-0.5">
             <h3 className="font-extrabold text-sm truncate" style={{ color: "#e6edf3" }}>{project.name}</h3>
@@ -228,7 +228,7 @@ function ProjectCard({ project, onClick }) {
         <div className="grid grid-cols-2 gap-2 mb-3">
           <div className="rounded-xl p-2.5" style={{ background: "#161d28" }}>
             <div className="text-[9px] uppercase tracking-wider mb-0.5" style={{ color: "#9da7b3" }}>Price</div>
-            <div className="text-sm font-mono font-bold" style={{ color: "#22C55E" }}>
+            <div className="text-sm font-mono font-bold" style={{ color: "#22d3ee" }}>
               {project.mint_price != null ? `${project.mint_price} USD` : "TBA"}
             </div>
           </div>
@@ -247,9 +247,9 @@ function ProjectCard({ project, onClick }) {
           onClick={e => { e.stopPropagation(); onClick(project); }}
           className="w-full h-9 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
           style={{
-            background: isLive ? "#22C55E" : "rgba(34,197,94,0.08)",
-            color:      isLive ? "#0b0f14" : "#22C55E",
-            border:     isLive ? "none"    : "1px solid rgba(34,197,94,0.2)",
+            background: isLive ? "#22d3ee" : "rgba(34,211,238,0.08)",
+            color:      isLive ? "#0b0f14" : "#22d3ee",
+            border:     isLive ? "none"    : "1px solid rgba(34,211,238,0.2)",
             cursor: "pointer",
           }}>
           {isLive ? "Mint Now" : phase === "allowlist" ? "Allowlist Mint" : "View Drop"}
@@ -271,7 +271,7 @@ function StatsBanner({ projects }) {
       {[
         { label: "Live Drops",     value: live,     color: "#22C55E", icon: Flame  },
         { label: "Upcoming",       value: upcoming,  color: "#f59e0b", icon: Clock  },
-        { label: "Total Projects", value: total,     color: "#22C55E", icon: Rocket },
+        { label: "Total Projects", value: total,     color: "#22d3ee", icon: Rocket },
       ].map(({ label, value, color, icon: Icon }) => (
         <div key={label} className="rounded-2xl p-4 flex items-center gap-3"
           style={{ background: "#0d1219", border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -294,8 +294,8 @@ function EmptyState({ filter }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
       <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4"
-        style={{ background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.12)" }}>
-        <Rocket size={28} style={{ color: "rgba(34,197,94,0.4)" }} />
+        style={{ background: "rgba(34,211,238,0.06)", border: "1px solid rgba(34,211,238,0.12)" }}>
+        <Rocket size={28} style={{ color: "rgba(34,211,238,0.4)" }} />
       </div>
       <p className="font-bold text-base mb-2" style={{ color: "#e6edf3" }}>
         No {filter !== "all" ? filter : ""} drops yet
@@ -322,12 +322,9 @@ export default function LaunchpadPage() {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
 
-  // ✅ FIXED: Navigate to the mint page when clicking a project
   function handleProjectClick(project) {
-    // ✅ FIX: Navigate by contract_address (0x…) so MintPage can always look it
-    // up regardless of status. Fall back to slug or id for legacy projects.
-    const target = project.contract_address || project.slug || project.id;
-    navigate(`/launchpad/${target}`);
+    // ✅ Navigate to /mint/:contract_address — works regardless of id/slug format
+    navigate(`/mint/${project.contract_address || project.id}`);
   }
 
   const featured = useMemo(() => projects.filter(p => p.status === "featured"), [projects]);
@@ -343,27 +340,27 @@ export default function LaunchpadPage() {
   }, [projects, filter, featured, search]);
 
   return (
-    <div className="fade-up px-4 sm:px-6 max-w-6xl mx-auto py-8" style={{ minHeight: "100vh", fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
+    <div className="fade-up px-4 sm:px-6 max-w-6xl mx-auto py-8" style={{ minHeight: "100vh" }}>
 
       {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Rocket size={18} style={{ color: "#22C55E" }} />
-              <span className="text-xs font-bold tracking-widest uppercase" style={{ color: "#22C55E" }}>Launchpad</span>
-            </div>
-            <h1 className="text-3xl font-extrabold mb-1" style={{ color: "#e6edf3" }}>NFT Drops</h1>
-            <p className="text-sm" style={{ color: "#9da7b3" }}>Discover and mint collections launching on Tempo Chain.</p>
-          </div>
-          {/* Apply to Launch button */}
-          <button onClick={() => navigate("/application")}
-            className="hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold"
-            style={{ background: "rgba(34,197,94,0.08)", color: "#22C55E", border: "1px solid rgba(34,197,94,0.25)", cursor: "pointer" }}>
-            Apply to Launch <ArrowRight size={13} />
-          </button>
-        </div>
+<div className="mb-8">
+  <div className="flex items-center justify-between">
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <Rocket size={18} style={{ color: "#22c55e" }} /> {/* Changed to Green */}
+        <span className="text-xs font-bold tracking-widest uppercase" style={{ color: "#22c55e" }}>Launchpad</span>
       </div>
+      <h1 className="text-3xl font-extrabold mb-1" style={{ color: "#e6edf3" }}>NFT Drops</h1>
+      <p className="text-sm" style={{ color: "#9da7b3" }}>Discover and mint collections launching on Tempo Chain.</p>
+    </div>
+    {/* Corrected path to /application and color to Green */}
+    <button onClick={() => navigate("/application")}
+      className="hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold"
+      style={{ background: "rgba(34,197,94,0.08)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.25)", cursor: "pointer" }}>
+      Apply to Launch <ArrowRight size={13} />
+    </button>
+  </div>
+</div>
 
       {/* Error */}
       {error && (
@@ -396,9 +393,9 @@ export default function LaunchpadPage() {
             <button key={f.id} onClick={() => setFilter(f.id)}
               className="h-8 px-3 rounded-full text-xs font-semibold whitespace-nowrap transition-colors"
               style={{
-                background: filter === f.id ? "rgba(34,197,94,0.12)" : "#0d1219",
-                color:      filter === f.id ? "#22C55E" : "#9da7b3",
-                border:     filter === f.id ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(255,255,255,0.06)",
+                background: filter === f.id ? "rgba(34,211,238,0.12)" : "#0d1219",
+                color:      filter === f.id ? "#22d3ee" : "#9da7b3",
+                border:     filter === f.id ? "1px solid rgba(34,211,238,0.3)" : "1px solid rgba(255,255,255,0.06)",
                 cursor: "pointer",
               }}>
               {f.label}
@@ -413,7 +410,7 @@ export default function LaunchpadPage() {
             value={search} onChange={e => setSearch(e.target.value)}
             className="h-8 pl-8 pr-3 rounded-full text-xs outline-none w-36"
             style={{ background: "#0d1219", border: "1px solid rgba(255,255,255,0.08)", color: "#e6edf3" }}
-            onFocus={e => e.target.style.borderColor = "#22C55E"}
+            onFocus={e => e.target.style.borderColor = "#22d3ee"}
             onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.08)"} />
         </div>
       </div>
@@ -431,13 +428,13 @@ export default function LaunchpadPage() {
         </div>
       )}
 
-      {/* Bottom CTA */}
+            {/* Bottom CTA */}
       {!isLoading && (
         <div className="mt-12 rounded-2xl p-8 text-center relative overflow-hidden"
           style={{ background: "#0d1219", border: "1px solid rgba(34,197,94,0.15)" }}>
           <div className="absolute inset-0 pointer-events-none"
             style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(34,197,94,0.06) 0%, transparent 70%)" }} />
-          <Rocket size={32} className="mx-auto mb-3" style={{ color: "#22C55E" }} />
+          <Rocket size={32} className="mx-auto mb-3" style={{ color: "#22c55e" }} />
           <h3 className="font-extrabold text-lg mb-2" style={{ color: "#e6edf3" }}>Launch Your Collection</h3>
           <p className="text-sm mb-5 max-w-sm mx-auto" style={{ color: "#9da7b3" }}>
             Apply to list your NFT project on the Tempo Launchpad. Multi-phase minting, allowlist support, and more.
@@ -445,12 +442,12 @@ export default function LaunchpadPage() {
           <div className="flex items-center justify-center gap-3">
             <button onClick={() => navigate("/application")}
               className="h-10 px-6 rounded-xl text-sm font-bold"
-              style={{ background: "#22C55E", color: "#0b0f14", border: "none", cursor: "pointer" }}>
+              style={{ background: "#22c55e", color: "#0b0f14", border: "none", cursor: "pointer" }}>
               Apply Now
             </button>
             <button onClick={() => navigate("/launchpad/guide")}
               className="h-10 px-6 rounded-xl text-sm font-bold"
-              style={{ background: "transparent", color: "#22C55E", border: "1px solid rgba(34,197,94,0.3)", cursor: "pointer" }}>
+              style={{ background: "transparent", color: "#22c55e", border: "1px solid rgba(34,197,94,0.3)", cursor: "pointer" }}>
               Read the Guide
             </button>
           </div>
@@ -458,4 +455,4 @@ export default function LaunchpadPage() {
       )}
     </div> 
   );  
-}
+}   
