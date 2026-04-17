@@ -562,4 +562,769 @@ function FeeConfigEditor({ contractAddress, currentFees, onSaved, onToast }) {
   const [flatFee, setFlatFee] = useState(
     currentFees ? fmt6(currentFees.perMintFlatFee) : "0.05"
   );
-  const [updating, setUpdating]
+  const [updating, setUpdating] = useState(false);
+
+  // Update when currentFees changes
+  useEffect(() => {
+    if (currentFees) {
+      setCreatorFeeBps(Number(currentFees.creatorFeeBps));
+      setMinterFeeBps(Number(currentFees.minterFeeBps));
+      setFlatFee(fmt6(currentFees.perMintFlatFee));
+    }
+  }, [currentFees]);
+
+  async function handleUpdate() {
+    setUpdating(true);
+    try {
+      const hash = await writeContractAsync({
+        address: contractAddress,
+        abi: COLLECTION_ABI,
+        functionName: "updateFeeConfig",
+        args: [
+          BigInt(minterFeeBps),
+          BigInt(creatorFeeBps),
+          toRaw(flatFee),
+        ],
+      });
+
+      onToast("Waiting for confirmation…", "info");
+      await publicClient.waitForTransactionReceipt({ hash });
+      onToast("Fee config updated!", "success");
+      onSaved?.();
+    } catch (e) {
+      console.error("Fee update error:", e);
+      onToast(e?.shortMessage || e?.message || "Transaction failed", "error");
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label
+            className="block text-[10px] font-bold uppercase tracking-wide mb-1.5"
+            style={{ color: "#9da7b3" }}
+          >
+            Creator Fee (bps)
+          </label>
+          <input
+            type="number"
+            placeholder="250 = 2.5%"
+            value={creatorFeeBps}
+            onChange={(e) => setCreatorFeeBps(e.target.value)}
+            className="w-full h-10 rounded-lg px-3 text-sm outline-none font-mono"
+            style={{
+              background: "#0b0f14",
+              border: "1px solid rgba(255,255,255,0.08)",
+              color: "#e6edf3",
+            }}
+            onFocus={(e) => (e.target.style.borderColor = "#f59e0b")}
+            onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.08)")}
+          />
+          <p className="text-[9px] mt-1" style={{ color: "#6b7280" }}>
+            {(creatorFeeBps / 100).toFixed(2)}%
+          </p>
+        </div>
+        <div>
+          <label
+            className="block text-[10px] font-bold uppercase tracking-wide mb-1.5"
+            style={{ color: "#9da7b3" }}
+          >
+            Minter Fee (bps)
+          </label>
+          <input
+            type="number"
+            placeholder="250 = 2.5%"
+            value={minterFeeBps}
+            onChange={(e) => setMinterFeeBps(e.target.value)}
+            className="w-full h-10 rounded-lg px-3 text-sm outline-none font-mono"
+            style={{
+              background: "#0b0f14",
+              border: "1px solid rgba(255,255,255,0.08)",
+              color: "#e6edf3",
+            }}
+            onFocus={(e) => (e.target.style.borderColor = "#f59e0b")}
+            onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.08)")}
+          />
+          <p className="text-[9px] mt-1" style={{ color: "#6b7280" }}>
+            {(minterFeeBps / 100).toFixed(2)}%
+          </p>
+        </div>
+        <div>
+          <label
+            className="block text-[10px] font-bold uppercase tracking-wide mb-1.5"
+            style={{ color: "#9da7b3" }}
+          >
+            Flat Fee (USD)
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            placeholder="0.05"
+            value={flatFee}
+            onChange={(e) => setFlatFee(e.target.value)}
+            className="w-full h-10 rounded-lg px-3 text-sm outline-none font-mono"
+            style={{
+              background: "#0b0f14",
+              border: "1px solid rgba(255,255,255,0.08)",
+              color: "#e6edf3",
+            }}
+            onFocus={(e) => (e.target.style.borderColor = "#f59e0b")}
+            onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.08)")}
+          />
+          <p className="text-[9px] mt-1" style={{ color: "#6b7280" }}>
+            Per mint
+          </p>
+        </div>
+      </div>
+
+      <button
+        onClick={handleUpdate}
+        disabled={updating}
+        className="w-full h-10 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
+        style={{
+          background: updating ? "#161d28" : "#f59e0b",
+          color: updating ? "#9da7b3" : "#0b0f14",
+          border: "none",
+          cursor: updating ? "not-allowed" : "pointer",
+        }}
+      >
+        {updating && (
+          <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+        )}
+        {updating ? "Updating…" : "Update Fee Config"}
+      </button>
+    </div>
+  );
+}
+
+// ─── Main CollectionManagerPage ───────────────────────────────────────────────
+export default function CollectionManagerPage() {
+  const { contractAddress } = useParams();
+  const navigate = useNavigate();
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  const publicClient = usePublicClient();
+  const { writeContractAsync } = useWriteContract();
+
+  const [project, setProject] = useState(null);
+  const [chainData, setChainData] = useState(null);
+  const [phases, setPhases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [toast, setToast] = useState({ msg: "", type: "info" });
+  const [revealUri, setRevealUri] = useState("");
+  const [revealing, setRevealing] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+
+  function showToast(msg, type = "info") {
+    setToast({ msg, type });
+    setTimeout(() => setToast({ msg: "", type: "info" }), 4000);
+  }
+
+  const loadChain = useCallback(async () => {
+    if (!contractAddress || !publicClient) return;
+    
+    try {
+      setLoadError(null);
+      
+      // Fetch all chain data in parallel with better error handling
+      const results = await Promise.allSettled([
+        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "totalMinted" }),
+        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "maxSupply" }),
+        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "totalPhases" }),
+        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "getFeeConfig" }),
+        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "creator" }),
+        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "owner" }),
+      ]);
+
+      const [mintedResult, maxResult, totalPResult, feesResult, creatorResult, ownerResult] = results;
+
+      const minted = mintedResult.status === 'fulfilled' ? mintedResult.value : 0n;
+      const max = maxResult.status === 'fulfilled' ? maxResult.value : 0n;
+      const totalP = totalPResult.status === 'fulfilled' ? totalPResult.value : 0n;
+      const fees = feesResult.status === 'fulfilled' ? feesResult.value : null;
+      const onchainCreator = creatorResult.status === 'fulfilled' ? creatorResult.value : null;
+      const onchainOwner = ownerResult.status === 'fulfilled' ? ownerResult.value : null;
+
+      setChainData({ minted, max, fees, creator: onchainCreator, owner: onchainOwner });
+
+      // Authorization check
+      let isAuthorized = false;
+      
+      if (address) {
+        const addrLower = address.toLowerCase();
+        
+        // Check 1: Direct creator match
+        if (onchainCreator && onchainCreator.toLowerCase() === addrLower) {
+          isAuthorized = true;
+        }
+        // Check 2: Owner match (if creator not available)
+        else if (onchainOwner && onchainOwner.toLowerCase() === addrLower) {
+          isAuthorized = true;
+        }
+        // Check 3: Supabase fallback
+        else {
+          try {
+            const { data: proj, error: projError } = await supabase
+              .from("projects")
+              .select("creator_wallet, creator_address")
+              .eq("contract_address", contractAddress.toLowerCase())
+              .maybeSingle();
+
+            if (!projError && proj) {
+              const storedCreator = (proj.creator_wallet || proj.creator_address || "").toLowerCase();
+              if (storedCreator && storedCreator === addrLower) {
+                isAuthorized = true;
+              }
+            }
+          } catch (dbError) {
+            console.error("Supabase auth check error:", dbError);
+          }
+        }
+      }
+
+      setAuthorized(isAuthorized);
+      setAuthChecked(true);
+
+      // Load phases
+      const count = Number(totalP);
+      if (count > 0) {
+        const phasePromises = Array.from({ length: count }, (_, i) =>
+          publicClient
+            .readContract({
+              address: contractAddress,
+              abi: COLLECTION_ABI,
+              functionName: "getPhase",
+              args: [BigInt(i)],
+            })
+            .then((p) => ({ id: i, ...p }))
+            .catch(() => null)
+        );
+
+        const fetched = await Promise.all(phasePromises);
+        setPhases(fetched.filter(Boolean));
+      } else {
+        setPhases([]);
+      }
+    } catch (e) {
+      console.error("[CollectionManager] loadChain error:", e);
+      setLoadError(e.message || "Failed to load collection data");
+    }
+  }, [contractAddress, publicClient, address]);
+
+  const loadProject = useCallback(async () => {
+    if (!contractAddress) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("*")
+        .eq("contract_address", contractAddress.toLowerCase())
+        .maybeSingle();
+
+      if (error) {
+        console.error("Project load error:", error);
+      } else {
+        setProject(data);
+      }
+    } catch (e) {
+      console.error("Project load exception:", e);
+    }
+  }, [contractAddress]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadAll() {
+      if (!mounted) return;
+      setLoading(true);
+      
+      await Promise.all([loadChain(), loadProject()]);
+      
+      if (mounted) setLoading(false);
+    }
+
+    loadAll();
+
+    return () => { mounted = false; };
+  }, [loadChain, loadProject]);
+
+  async function handleReveal() {
+    if (!revealUri) return showToast("Enter a URI first", "error");
+    setRevealing(true);
+    
+    try {
+      const hash = await writeContractAsync({
+        address: contractAddress,
+        abi: COLLECTION_ABI,
+        functionName: "reveal",
+        args: [revealUri],
+      });
+      
+      showToast("Waiting for reveal…", "info");
+      await publicClient.waitForTransactionReceipt({ hash });
+
+      // Update Supabase
+      await Promise.all([
+        supabase
+          .from("collections")
+          .update({ metadata_base_uri: revealUri })
+          .eq("contract_address", contractAddress.toLowerCase()),
+        supabase
+          .from("projects")
+          .update({ base_uri: revealUri, status: "live" })
+          .eq("contract_address", contractAddress.toLowerCase()),
+      ]);
+
+      showToast("Collection revealed! Images will appear shortly.", "success");
+      loadProject();
+    } catch (e) {
+      console.error("Reveal error:", e);
+      showToast(e?.shortMessage || e?.message || "Reveal failed", "error");
+    } finally {
+      setRevealing(false);
+    }
+  }
+
+  async function handleWithdraw() {
+    setWithdrawing(true);
+    
+    try {
+      const hash = await writeContractAsync({
+        address: contractAddress,
+        abi: COLLECTION_ABI,
+        functionName: "withdraw",
+        args: [],
+      });
+      
+      showToast("Withdrawing…", "info");
+      await publicClient.waitForTransactionReceipt({ hash });
+      showToast("Funds withdrawn to your wallet!", "success");
+    } catch (e) {
+      console.error("Withdraw error:", e);
+      showToast(e?.shortMessage || e?.message || "Withdraw failed", "error");
+    } finally {
+      setWithdrawing(false);
+    }
+  }
+
+  // ─── Loading State ─────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[70vh]">
+        <div
+          className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin"
+          style={{ borderColor: "#22d3ee" }}
+        />
+      </div>
+    );
+  }
+
+  // ─── Error State ───────────────────────────────────────────────────────────
+  if (loadError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[70vh] gap-5 fade-up px-4">
+        <AlertCircle size={40} style={{ color: "#EF4444" }} />
+        <div className="text-center max-w-md">
+          <h1 className="text-xl font-extrabold mb-2" style={{ color: "#e6edf3" }}>
+            Error Loading Collection
+          </h1>
+          <p className="text-sm mb-4" style={{ color: "#9da7b3" }}>
+            {loadError}
+          </p>
+          <button
+            onClick={() => navigate("/studio")}
+            className="h-10 px-5 rounded-xl text-sm font-bold"
+            style={{
+              background: "rgba(34,211,238,0.08)",
+              color: "#22d3ee",
+              border: "1px solid rgba(34,211,238,0.2)",
+              cursor: "pointer",
+            }}
+          >
+            Back to Studio
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Not Connected ─────────────────────────────────────────────────────────
+  if (!isConnected) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[70vh] gap-5 fade-up px-4">
+        <AlertCircle size={40} style={{ color: "#9da7b3" }} />
+        <div className="text-center">
+          <h1 className="text-xl font-extrabold mb-2" style={{ color: "#e6edf3" }}>
+            Connect Your Wallet
+          </h1>
+          <p className="text-sm" style={{ color: "#9da7b3" }}>
+            Connect the wallet that deployed this collection to manage it.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Not Authorized ───────────────────────────────────────────────────────
+  // Only show after we've checked authorization
+  if (authChecked && !authorized) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[70vh] gap-5 fade-up px-4">
+        <AlertCircle size={40} style={{ color: "#EF4444" }} />
+        <div className="text-center max-w-md">
+          <h1 className="text-xl font-extrabold mb-2" style={{ color: "#e6edf3" }}>
+            Access Denied
+          </h1>
+          <p className="text-sm mb-1" style={{ color: "#9da7b3" }}>
+            Only the collection creator can manage this dashboard.
+          </p>
+          
+          {chainData?.creator && (
+            <p className="text-xs font-mono mt-2" style={{ color: "#6b7280" }}>
+              Expected Creator: {chainData.creator.slice(0, 10)}…{chainData.creator.slice(-6)}
+            </p>
+          )}
+          
+          {chainData?.owner && chainData.owner !== chainData?.creator && (
+            <p className="text-xs font-mono mt-1" style={{ color: "#6b7280" }}>
+              Expected Owner: {chainData.owner.slice(0, 10)}…{chainData.owner.slice(-6)}
+            </p>
+          )}
+          
+          <p className="text-xs font-mono mt-1" style={{ color: "#6b7280" }}>
+            Connected: {address?.slice(0, 10)}…{address?.slice(-6)}
+          </p>
+          
+          <button
+            onClick={() => navigate("/studio")}
+            className="mt-4 h-10 px-5 rounded-xl text-sm font-bold"
+            style={{
+              background: "rgba(34,211,238,0.08)",
+              color: "#22d3ee",
+              border: "1px solid rgba(34,211,238,0.2)",
+              cursor: "pointer",
+            }}
+          >
+            Back to Studio
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const mintProgress = chainData?.max > 0n 
+    ? (Number(chainData.minted) / Number(chainData.max)) * 100 
+    : 0;
+
+  return (
+    <div className="min-h-screen pb-20 fade-up" style={{ background: "#0b0f14" }}>
+      <Toast msg={toast.msg} type={toast.type} />
+
+      <div className="max-w-3xl mx-auto px-4 py-10">
+        {/* Back */}
+        <button
+          onClick={() => navigate("/studio")}
+          className="flex items-center gap-2 text-sm mb-6"
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "#9da7b3",
+          }}
+        >
+          <ArrowLeft size={14} /> Back to Studio
+        </button>
+
+        {/* Header */}
+        <div className="flex items-start gap-4 mb-8">
+          {project?.logo_url && (
+            <img
+              src={project.logo_url}
+              alt=""
+              className="w-16 h-16 rounded-2xl object-cover flex-shrink-0"
+            />
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <Settings size={14} style={{ color: "#22d3ee" }} />
+              <span
+                className="text-xs font-bold uppercase tracking-widest"
+                style={{ color: "#22d3ee", fontFamily: "Syne, sans-serif" }}
+              >
+                Collection Manager
+              </span>
+            </div>
+            <h1
+              className="text-2xl font-extrabold truncate"
+              style={{ color: "#e6edf3", fontFamily: "Syne, sans-serif" }}
+            >
+              {project?.name || "Your Collection"}
+            </h1>
+            <div className="flex items-center gap-2 mt-1">
+              <code className="text-xs font-mono" style={{ color: "#9da7b3" }}>
+                {contractAddress?.slice(0, 10)}…{contractAddress?.slice(-6)}
+              </code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(contractAddress);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: copied ? "#22d3ee" : "#9da7b3",
+                }}
+              >
+                {copied ? <Check size={12} /> : <Copy size={12} />}
+              </button>
+              <a
+                href={`${EXPLORER_BASE}/address/${contractAddress}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: "#9da7b3" }}
+              >
+                <ExternalLink size={12} />
+              </a>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              loadChain();
+              loadProject();
+            }}
+            className="h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{
+              background: "#121821",
+              border: "1px solid rgba(255,255,255,0.06)",
+              cursor: "pointer",
+              color: "#9da7b3",
+            }}
+          >
+            <RefreshCw size={13} />
+          </button>
+        </div>
+
+        {/* Stats */}
+        {chainData && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            {[
+              {
+                label: "Minted",
+                value: Number(chainData.minted).toLocaleString(),
+                icon: Zap,
+              },
+              {
+                label: "Supply",
+                value: Number(chainData.max).toLocaleString(),
+                icon: Layers,
+              },
+              {
+                label: "Phases",
+                value: phases.length,
+                icon: Users,
+              },
+              {
+                label: "Flat Fee",
+                value: chainData.fees
+                  ? "$" + fmt6(chainData.fees.perMintFlatFee) + "/mint"
+                  : "—",
+                icon: DollarSign,
+              },
+            ].map(({ label, value, icon: Icon }) => (
+              <div
+                key={label}
+                className="rounded-2xl p-4"
+                style={{
+                  background: "#121821",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Icon size={11} style={{ color: "#9da7b3" }} />
+                  <div
+                    className="text-[10px] uppercase tracking-wide"
+                    style={{ color: "#9da7b3" }}
+                  >
+                    {label}
+                  </div>
+                </div>
+                <div
+                  className="font-mono font-bold text-lg"
+                  style={{ color: "#e6edf3" }}
+                >
+                  {value}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Mint progress */}
+        {chainData && (
+          <div
+            className="rounded-2xl p-4 mb-6"
+            style={{
+              background: "#121821",
+              border: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            <div className="flex justify-between text-xs mb-2">
+              <span style={{ color: "#9da7b3" }}>Mint Progress</span>
+              <span className="font-mono font-bold" style={{ color: "#e6edf3" }}>
+                {Number(chainData.minted).toLocaleString()} /{" "}
+                {Number(chainData.max).toLocaleString()} ({mintProgress.toFixed(1)}%)
+              </span>
+            </div>
+            <div
+              className="h-2 rounded-full overflow-hidden"
+              style={{ background: "rgba(255,255,255,0.06)" }}
+            >
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: mintProgress + "%",
+                  background: "linear-gradient(90deg, #22d3ee, #a78bfa)",
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-5">
+          {/* ── Phase Management ── */}
+          <Section title="Mint Phases" icon={Zap}>
+            <p className="text-xs mb-4" style={{ color: "#9da7b3" }}>
+              Set up to 3 phases: OG (allowlist), Whitelist (allowlist), Public
+              (open). Upload a CSV for allowlist phases.
+            </p>
+            <div className="space-y-4">
+              {phases.map((p) => (
+                <PhaseEditor
+                  key={p.id}
+                  phaseId={p.id}
+                  phase={p}
+                  contractAddress={contractAddress}
+                  onSaved={loadChain}
+                  onToast={showToast}
+                />
+              ))}
+              {phases.length < 3 && (
+                <div
+                  className="rounded-xl p-3"
+                  style={{ border: "1px dashed rgba(34,211,238,0.2)" }}
+                >
+                  <p
+                    className="text-xs text-center mb-3"
+                    style={{ color: "#9da7b3" }}
+                  >
+                    {phases.length === 0
+                      ? "Add your first phase — OG → Whitelist → Public"
+                      : "Add " + PHASE_NAMES[phases.length] + " phase"}
+                  </p>
+                  <PhaseEditor
+                    phaseId={phases.length}
+                    phase={null}
+                    contractAddress={contractAddress}
+                    onSaved={loadChain}
+                    onToast={showToast}
+                  />
+                </div>
+              )}
+            </div>
+          </Section>
+
+          {/* ── Fee Configuration ── */}
+          <Section title="Creator Fees" icon={Percent} accent="#f59e0b">
+            <p className="text-xs mb-4" style={{ color: "#9da7b3" }}>
+              Configure creator fees and royalties. These are taken from each
+              mint and sent to your creator wallet.
+            </p>
+            <FeeConfigEditor
+              contractAddress={contractAddress}
+              currentFees={chainData?.fees}
+              onSaved={loadChain}
+              onToast={showToast}
+            />
+          </Section>
+
+          {/* ── Reveal ── */}
+          <Section title="Reveal Collection" icon={Eye} accent="#f59e0b">
+            <p className="text-xs mb-4" style={{ color: "#9da7b3" }}>
+              Once your art is uploaded to IPFS, set the base URI to reveal
+              metadata to holders. This also updates the marketplace.
+            </p>
+            <div className="space-y-3">
+              <input
+                type="text"
+                placeholder="ipfs://Qm... or https://gateway.lighthouse.storage/ipfs/..."
+                value={revealUri}
+                onChange={(e) => setRevealUri(e.target.value)}
+                className="w-full h-11 rounded-xl px-4 text-sm font-mono outline-none"
+                style={{
+                  background: "#161d28",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  color: "#e6edf3",
+                }}
+                onFocus={(e) => (e.target.style.borderColor = "#f59e0b")}
+                onBlur={(e) =>
+                  (e.target.style.borderColor = "rgba(255,255,255,0.06)")
+                }
+              />
+              <button
+                onClick={handleReveal}
+                disabled={revealing || !revealUri}
+                className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+                style={{
+                  background: revealing || !revealUri ? "#161d28" : "#f59e0b",
+                  color: revealing || !revealUri ? "#9da7b3" : "#0b0f14",
+                  border: "none",
+                  cursor: revealing || !revealUri ? "not-allowed" : "pointer",
+                }}
+              >
+                {revealing && (
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                )}
+                {revealing ? "Revealing…" : "Push Reveal On-Chain"}
+              </button>
+            </div>
+          </Section>
+
+          {/* ── Withdraw ── */}
+          <Section title="Withdraw Earnings" icon={DollarSign} accent="#22C55E">
+            <p className="text-xs mb-4" style={{ color: "#9da7b3" }}>
+              Withdraw accumulated pathUSD from your contract. Funds are sent
+              to your creator wallet.
+            </p>
+            <button
+              onClick={handleWithdraw}
+              disabled={withdrawing}
+              className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+              style={{
+                background: withdrawing ? "#161d28" : "rgba(34,197,94,0.12)",
+                color: withdrawing ? "#9da7b3" : "#22C55E",
+                border: withdrawing
+                  ? "none"
+                  : "1px solid rgba(34,197,94,0.25)",
+                cursor: withdrawing ? "not-allowed" : "pointer",
+              }}
+            >
+              {withdrawing && (
+                <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              )}
+              {withdrawing ? "Withdrawing…" : "Withdraw to Creator Wallet"}
+            </button>
+          </Section>
+        </div>
+      </div>
+    </div>
+  );
+}
