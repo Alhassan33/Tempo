@@ -43,7 +43,7 @@ function useCountdown(targetSec) {
 // ─── Phase Badge ──────────────────────────────────────────────────────────────
 function PhaseBadge({ status }) {
   const cfg = {
-    live:     { label: "● LIVE",     color: "#22d3ee", bg: "rgba(34,211,238,0.12)",   border: "rgba(34,211,238,0.3)"   },
+    live:     { label: "● LIVE",     color: "#22C55E", bg: "rgba(34,197,94,0.12)",   border: "rgba(34,197,94,0.3)"   },
     upcoming: { label: "◎ UPCOMING", color: "#9da7b3", bg: "rgba(157,167,179,0.08)",  border: "rgba(157,167,179,0.2)"  },
     ended:    { label: "✕ ENDED",    color: "#6b7280", bg: "rgba(107,114,128,0.08)",  border: "rgba(107,114,128,0.2)"  },
     inactive: { label: "— OFF",      color: "#6b7280", bg: "rgba(107,114,128,0.06)",  border: "rgba(107,114,128,0.15)" },
@@ -70,7 +70,7 @@ function MintProgress({ minted, max }) {
       </div>
       <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "#161d28" }}>
         <div className="h-full rounded-full transition-all duration-700"
-          style={{ width: pct + "%", background: pct >= 100 ? "#9da7b3" : "linear-gradient(90deg, #22d3ee, #38bdf8)" }} />
+          style={{ width: pct + "%", background: pct >= 100 ? "#9da7b3" : "linear-gradient(90deg, #22C55E, #16a34a)" }} />
       </div>
       <div className="text-[10px] mt-1 text-right font-mono" style={{ color: "#9da7b3" }}>{pct}% minted</div>
     </div>
@@ -89,11 +89,11 @@ function PhaseCard({ phase, phaseId, selected, onSelect }) {
       onClick={() => status === "live" && onSelect(phaseId)}
       className="rounded-xl p-4 transition-all duration-200"
       style={{
-        background: selected ? "rgba(34,211,238,0.06)" : "#161d28",
+        background: selected ? "rgba(34,197,94,0.06)" : "#161d28",
         border: selected
-          ? "1px solid rgba(34,211,238,0.4)"
+          ? "1px solid rgba(34,197,94,0.4)"
           : status === "live"
-          ? "1px solid rgba(34,211,238,0.15)"
+          ? "1px solid rgba(34,197,94,0.15)"
           : "1px solid rgba(255,255,255,0.06)",
         cursor: status === "live" ? "pointer" : "default",
         opacity: status === "ended" || status === "inactive" ? 0.45 : 1,
@@ -104,7 +104,7 @@ function PhaseCard({ phase, phaseId, selected, onSelect }) {
           <div className="flex items-center gap-2">
             {/* Phase type icon */}
             {isPublic
-              ? <Globe2 size={13} style={{ color: meta.color || "#22d3ee" }} />
+              ? <Globe2 size={13} style={{ color: meta.color || "#22C55E" }} />
               : <Lock size={13} style={{ color: meta.color || "#9da7b3" }} />}
             <span className="font-bold text-sm" style={{ color: "#e6edf3" }}>
               {phase.name || meta.name || ("Phase " + phaseId)}
@@ -121,7 +121,7 @@ function PhaseCard({ phase, phaseId, selected, onSelect }) {
       <div className="grid grid-cols-2 gap-2 mb-2">
         <div className="rounded-lg p-2" style={{ background: "#0b0f14" }}>
           <div className="text-[9px] uppercase tracking-wider mb-0.5" style={{ color: "#9da7b3" }}>Price</div>
-          <div className="text-sm font-mono font-bold" style={{ color: "#22d3ee" }}>
+          <div className="text-sm font-mono font-bold" style={{ color: "#22C55E" }}>
             {Number(phase.price) === 0 ? "FREE" : formatPrice(phase.price) + " USD"}
           </div>
         </div>
@@ -139,7 +139,7 @@ function PhaseCard({ phase, phaseId, selected, onSelect }) {
       {status === "upcoming" && phase.startTime > 0n && (
         <div className="flex items-center gap-1.5 text-xs mt-1" style={{ color: "#9da7b3" }}>
           <Clock size={11} />
-          Starts in <span className="font-mono font-bold" style={{ color: "#22d3ee" }}>{countdown}</span>
+          Starts in <span className="font-mono font-bold" style={{ color: "#22C55E" }}>{countdown}</span>
         </div>
       )}
     </div>
@@ -265,7 +265,7 @@ function MintWidget({ phase, phaseId, nftContract, onSuccess }) {
             {quoting ? (
               <span className="text-xs" style={{ color: "#9da7b3" }}>Calculating...</span>
             ) : (
-              <span className="font-mono text-xl font-bold" style={{ color: "#22d3ee" }}>
+              <span className="font-mono text-xl font-bold" style={{ color: "#22C55E" }}>
                 {totalDisplay} <span className="text-sm" style={{ color: "#9da7b3" }}>USD</span>
               </span>
             )}
@@ -278,7 +278,7 @@ function MintWidget({ phase, phaseId, nftContract, onSuccess }) {
         <div className="flex justify-between text-xs">
           <span style={{ color: "#9da7b3" }}>Your pathUSD balance</span>
           <span className={"font-mono font-bold " + (!hasEnoughBalance ? "text-red-400" : "")}
-            style={hasEnoughBalance ? { color: "#22d3ee" } : {}}>
+            style={hasEnoughBalance ? { color: "#22C55E" } : {}}>
             {formatPrice(balance)} USD
           </span>
         </div>
@@ -323,18 +323,18 @@ function MintWidget({ phase, phaseId, nftContract, onSuccess }) {
         disabled={!canMint && step !== "done"}
         className="w-full h-12 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all"
         style={{
-          background: canMint || step === "done" ? "#22d3ee" : "#161d28",
+          background: canMint || step === "done" ? "#22C55E" : "#161d28",
           color:      canMint || step === "done" ? "#0b0f14" : "#6b7280",
           border:     canMint || step === "done" ? "none" : "1px solid rgba(255,255,255,0.06)",
           cursor:     canMint || step === "done" ? "pointer" : "not-allowed",
-          boxShadow:  canMint ? "0 0 20px rgba(34,211,238,0.25)" : "none",
+          boxShadow:  canMint ? "0 0 20px rgba(34,197,94,0.25)" : "none",
         }}>
         {busy && <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />}
         {btnLabel}
       </button>
 
       <div className="flex items-center justify-center gap-1.5 text-[10px]" style={{ color: "#9da7b3" }}>
-        <ShieldCheck size={12} style={{ color: "#22d3ee" }} />
+        <ShieldCheck size={12} style={{ color: "#22C55E" }} />
         Secured by Tempo Launchpad · Paid in pathUSD
       </div>
     </div>
@@ -373,22 +373,22 @@ export default function MintPage() {
 
   if (projectsLoading) return (
     <div className="flex items-center justify-center min-h-[60vh]">
-      <div className="w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: "#22d3ee" }} />
+      <div className="w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: "#22C55E" }} />
     </div>
   );
 
   if (!project) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-6">
-      <Rocket size={40} className="mb-4" style={{ color: "rgba(34,211,238,0.3)" }} />
+      <Rocket size={40} className="mb-4" style={{ color: "rgba(34,197,94,0.3)" }} />
       <p className="font-bold" style={{ color: "#e6edf3" }}>Project not found</p>
-      <button onClick={() => navigate("/launchpad")} className="mt-4 text-sm" style={{ color: "#22d3ee", background: "none", border: "none", cursor: "pointer" }}>
+      <button onClick={() => navigate("/launchpad")} className="mt-4 text-sm" style={{ color: "#22C55E", background: "none", border: "none", cursor: "pointer" }}>
         ← Back to Launchpad
       </button>
     </div>
   );
 
   return (
-    <div className="fade-up px-4 sm:px-6 max-w-5xl mx-auto py-8">
+    <div className="fade-up px-4 sm:px-6 max-w-5xl mx-auto py-8" style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
       {/* Back */}
       <button onClick={() => navigate("/launchpad")}
         className="flex items-center gap-2 text-sm mb-6 hover:opacity-80 transition-opacity"
@@ -416,7 +416,7 @@ export default function MintPage() {
               style={{ border: "3px solid #0b0f14", background: "#161d28" }}>
               {project.logo_url
                 ? <img src={project.logo_url} alt={project.name} className="w-full h-full object-cover" />
-                : <div className="w-full h-full flex items-center justify-center text-xl font-bold" style={{ color: "#22d3ee" }}>{project.name[0]}</div>}
+                : <div className="w-full h-full flex items-center justify-center text-xl font-bold" style={{ color: "#22C55E" }}>{project.name[0]}</div>}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -520,7 +520,7 @@ export default function MintPage() {
               </div>
             ) : !nftContract ? (
               <div className="rounded-2xl p-5 text-center" style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <Zap size={28} className="mx-auto mb-3" style={{ color: "rgba(34,211,238,0.3)" }} />
+                <Zap size={28} className="mx-auto mb-3" style={{ color: "rgba(34,197,94,0.3)" }} />
                 <p className="text-sm font-bold mb-1" style={{ color: "#e6edf3" }}>Contract Not Deployed</p>
                 <p className="text-xs" style={{ color: "#9da7b3" }}>This project hasn't deployed its contract yet.</p>
               </div>
@@ -545,7 +545,7 @@ export default function MintPage() {
                 <div className="flex items-center justify-between text-xs">
                   <span style={{ color: "#9da7b3" }}>Contract</span>
                   <a href={EXPLORER_BASE + "/address/" + nftContract} target="_blank" rel="noreferrer"
-                    className="font-mono flex items-center gap-1" style={{ color: "#22d3ee" }}>
+                    className="font-mono flex items-center gap-1" style={{ color: "#22C55E" }}>
                     {nftContract.slice(0, 6)}…{nftContract.slice(-4)} <ExternalLink size={10} />
                   </a>
                 </div>
