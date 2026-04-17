@@ -35,7 +35,7 @@ async function fixMetadata() {
         contract.tokenURI(nft.token_id).catch(() => "")
       ]);
 
-      const cleanName = ${rawName} #${nft.token_id};
+      const cleanName = `${rawName} #${nft.token_id}`;
       
       // 3. Universal Gateway Logic:
       // Converts ipfs:// to a working web link (Lighthouse or Irys)
@@ -51,7 +51,7 @@ async function fixMetadata() {
         token_id: nft.token_id 
       });
 
-      console.log(���️ REPAIRED: ${cleanName});
+      console.log(`🛠️ REPAIRED: ${cleanName}`);
     }
 
     setTimeout(fixMetadata, 1000);

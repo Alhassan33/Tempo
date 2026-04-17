@@ -31,7 +31,7 @@ async function sync() {
     }
 
     let targetBlock = Math.min(startBlock + CHUNK_SIZE, currentBlock);
-    console.log(��� SCANNING ALL: ${startBlock} -> ${targetBlock});
+    console.log(`🔎 SCANNING ALL: ${startBlock} -> ${targetBlock}`);
 
     // Fetch every collection in your marketplace
     const { data: cols } = await supabase.from('collections').select('contract_address');
