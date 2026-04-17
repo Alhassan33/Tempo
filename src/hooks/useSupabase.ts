@@ -1,12 +1,3 @@
-/**
- * hooks/useSupabase.ts
- * 
- * FIXED VERSION - Addresses:
- * 1. Proper Supabase .or() syntax for multiple column filters
- * 2. Added total_minted to queries
- * 3. Better error handling
- */
-
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
@@ -42,7 +33,7 @@ export interface Collection {
 export interface Project {
   id: string;
   name: string;
-  symbol: string;
+  symbol: string;             // ← added: token symbol e.g. "TNYANS"
   contract_address: string;
   description: string;
   logo_url: string;
@@ -52,7 +43,7 @@ export interface Project {
   discord: string;
   mint_price: number;
   max_supply: number;
-  total_minted: number;
+  total_minted: number;       // ← added: live mint count
   mint_start_time: string;
   allowlist_active: boolean;
   allowlist_price: number;
@@ -60,9 +51,9 @@ export interface Project {
   payment_token: string;
   status: string;
   featured_order: number;
-  creator_wallet: string;
-  creator_address: string;
-  base_uri: string;
+  creator_wallet: string;     // ← added: deployer wallet address
+  creator_address: string;    // ← added: alias used by some older rows
+  base_uri: string;           // ← added: set on reveal
 }
 
 export interface Listing {
@@ -71,18 +62,18 @@ export interface Listing {
   seller: string;
   nft_contract: string;
   token_id: number;
-  price: number;
+  price: number;              // raw 6-decimal units e.g. 25000000 = $25.00
   active: boolean;
   created_at: string;
   name?: string;
   image?: string;
-  displayPrice?: string;
+  displayPrice?: string;      // computed: price / 1e6
 }
 
 export interface CollectionStats {
   totalSupply: number;
   uniqueOwners: number;
-  floorPrice: number;
+  floorPrice: number;         // raw 6-decimal units
   listedCount: number;
   volume24h: number;
   royalties: number;
@@ -98,19 +89,13 @@ export function useCollections(sortBy: string = "volume_total") {
   useEffect(() => {
     async function load() {
       setIsLoading(true);
-      try {
-        const { data, error: dbError } = await supabase
-          .from("collections")
-          .select("*")
-          .order(sortBy, { ascending: false });
-        
-        if (dbError) throw dbError;
-        setCollections(data || []);
-      } catch (err: any) {
-        setError(err.message || "Failed to fetch collections");
-      } finally {
-        setIsLoading(false);
-      }
+      const { data, error } = await supabase
+        .from("collections")
+        .select("*")
+        .order(sortBy, { ascending: false });
+      if (error) setError(error.message);
+      else setCollections(data || []);
+      setIsLoading(false);
     }
     load();
   }, [sortBy]);
@@ -119,36 +104,26 @@ export function useCollections(sortBy: string = "volume_total") {
 }
 
 // ─── 2. useCollection ─────────────────────────────────────────────────────────
+// Accepts slug or 0x address. Always lowercases address before querying.
 export function useCollection(slugOrAddress: string) {
   const [collection, setCollection] = useState<Collection | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!slugOrAddress) {
-      setIsLoading(false);
-      return;
-    }
-    
+    if (!slugOrAddress) return;
     async function load() {
       setIsLoading(true);
-      try {
-        const isAddress = slugOrAddress.startsWith("0x");
-        const value = isAddress ? slugOrAddress.toLowerCase() : slugOrAddress;
-        
-        const { data, error: dbError } = await supabase
-          .from("collections")
-          .select("*")
-          .eq(isAddress ? "contract_address" : "slug", value)
-          .single();
-        
-        if (dbError) throw dbError;
-        setCollection(data);
-      } catch (err: any) {
-        setError(err.message || "Failed to fetch collection");
-      } finally {
-        setIsLoading(false);
-      }
+      const isAddress = slugOrAddress.startsWith("0x");
+      const value = isAddress ? slugOrAddress.toLowerCase() : slugOrAddress;
+      const { data, error } = await supabase
+        .from("collections")
+        .select("*")
+        .eq(isAddress ? "contract_address" : "slug", value)
+        .single();
+      if (error) setError(error.message);
+      else setCollection(data);
+      setIsLoading(false);
     }
     load();
   }, [slugOrAddress]);
@@ -157,15 +132,16 @@ export function useCollection(slugOrAddress: string) {
 }
 
 // ─── 3. useCollectionStats ────────────────────────────────────────────────────
+// Tries get_collection_stats RPC first, falls back to direct collections table.
 export function useCollectionStats(contractAddress: string) {
   const [stats, setStats] = useState<CollectionStats>({
-    totalSupply: 0,
+    totalSupply:  0,
     uniqueOwners: 0,
-    floorPrice: 0,
-    listedCount: 0,
-    volume24h: 0,
-    royalties: 0,
-    volumeTotal: 0,
+    floorPrice:   0,
+    listedCount:  0,
+    volume24h:    0,
+    royalties:    0,
+    volumeTotal:  0,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -181,46 +157,43 @@ export function useCollectionStats(contractAddress: string) {
       setError(null);
 
       try {
-        // Try RPC first
-        const { data: rpcData, error: rpcError } = await supabase
+        const { data, error: rpcError } = await supabase
           .rpc("get_collection_stats", { collection_address: contractAddress.toLowerCase() });
 
-        if (!rpcError && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
-          const row = rpcData[0];
+        if (!rpcError && data && Array.isArray(data) && data.length > 0) {
+          const row = data[0];
           setStats({
-            totalSupply: Number(row.total_supply) || 0,
+            totalSupply:  Number(row.total_supply)  || 0,
             uniqueOwners: Number(row.unique_owners) || 0,
-            floorPrice: Number(row.floor_price) || 0,
-            listedCount: Number(row.listed_count) || 0,
-            volume24h: Number(row.volume_24h) || 0,
-            royalties: Number(row.royalty_bps) || 0,
-            volumeTotal: Number(row.volume_total) || 0,
+            floorPrice:   Number(row.floor_price)   || 0,
+            listedCount:  Number(row.listed_count)  || 0,
+            volume24h:    Number(row.volume_24h)    || 0,
+            royalties:    Number(row.royalty_bps)   || 0,
+            volumeTotal:  Number(row.volume_total)  || 0,
           });
           setIsLoading(false);
           return;
         }
-      } catch {
-        // RPC failed, continue to fallback
-      }
+      } catch {}
 
       // Fallback: direct table read
       try {
         const { data: col, error: colErr } = await supabase
           .from("collections")
-          .select("total_supply, owners, floor_price, listed_count, volume_24h, royalty_bps, volume_total, total_minted")
+          .select("total_supply, owners, floor_price, listed_count, volume_24h, royalty_bps, volume_total")
           .eq("contract_address", contractAddress.toLowerCase())
           .single();
 
         if (colErr) throw colErr;
 
         setStats({
-          totalSupply: Number(col?.total_supply) || 0,
-          uniqueOwners: Number(col?.owners) || 0,
-          floorPrice: Number(col?.floor_price) || 0,
-          listedCount: Number(col?.listed_count) || 0,
-          volume24h: Number(col?.volume_24h) || 0,
-          royalties: Number(col?.royalty_bps) || 0,
-          volumeTotal: Number(col?.volume_total) || 0,
+          totalSupply:  Number(col?.total_supply)  || 0,
+          uniqueOwners: Number(col?.owners)         || 0,
+          floorPrice:   Number(col?.floor_price)    || 0,
+          listedCount:  Number(col?.listed_count)   || 0,
+          volume24h:    Number(col?.volume_24h)     || 0,
+          royalties:    Number(col?.royalty_bps)    || 0,
+          volumeTotal:  Number(col?.volume_total)   || 0,
         });
       } catch (err: any) {
         console.error("[useCollectionStats] fallback error:", err);
@@ -237,6 +210,7 @@ export function useCollectionStats(contractAddress: string) {
 }
 
 // ─── 4. useFeaturedProjects ───────────────────────────────────────────────────
+// Includes "draft" status so Studio-deployed collections appear before they are promoted
 export function useFeaturedProjects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -245,20 +219,15 @@ export function useFeaturedProjects() {
   useEffect(() => {
     async function load() {
       setIsLoading(true);
-      try {
-        const { data, error: dbError } = await supabase
-          .from("projects")
-          .select("*")
-          .in("status", ["featured", "live", "approved"])
-          .order("featured_order", { ascending: true });
-        
-        if (dbError) throw dbError;
-        setProjects(data || []);
-      } catch (err: any) {
-        setError(err.message || "Failed to fetch featured projects");
-      } finally {
-        setIsLoading(false);
-      }
+      const { data, error } = await supabase
+        .from("projects")
+        .select("*")
+        .in("status", ["featured", "live", "approved", "draft"])  
+        // "draft" = Studio-deployed collections that are not yet promoted/approved
+        .order("featured_order", { ascending: true });
+      if (error) setError(error.message);
+      else setProjects(data || []);
+      setIsLoading(false);
     }
     load();
   }, []);
@@ -267,6 +236,7 @@ export function useFeaturedProjects() {
 }
 
 // ─── 5. useListings ──────────────────────────────────────────────────────────
+// Direct table query — no broken RPC. Forces lowercase. Adds displayPrice.
 export function useListings(nftContract: string) {
   const [listings, setListings] = useState<Listing[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -325,19 +295,12 @@ export function useSubmitProject() {
     setIsLoading(true);
     setError(null);
     setIsSuccess(false);
-    
-    try {
-      const { error: dbError } = await supabase
-        .from("projects")
-        .insert([{ ...form, status: "pending" }]);
-      
-      if (dbError) throw dbError;
-      setIsSuccess(true);
-    } catch (err: any) {
-      setError(err.message || "Failed to submit project");
-    } finally {
-      setIsLoading(false);
-    }
+    const { error } = await supabase
+      .from("projects")
+      .insert([{ ...form, status: "pending" }]);
+    if (error) setError(error.message);
+    else setIsSuccess(true);
+    setIsLoading(false);
   };
 
   return { submit, isLoading, isSuccess, error };
@@ -352,61 +315,37 @@ export function useAdminProjects() {
   useEffect(() => {
     async function load() {
       setIsLoading(true);
-      try {
-        const { data, error: dbError } = await supabase
-          .from("projects")
-          .select("*")
-          .order("submitted_at", { ascending: false });
-        
-        if (dbError) throw dbError;
-        setProjects(data || []);
-      } catch (err: any) {
-        setError(err.message || "Failed to fetch admin projects");
-      } finally {
-        setIsLoading(false);
-      }
+      const { data, error } = await supabase
+        .from("projects")
+        .select("*")
+        .order("submitted_at", { ascending: false });
+      if (error) setError(error.message);
+      else setProjects(data || []);
+      setIsLoading(false);
     }
     load();
   }, []);
 
   const updateStatus = async (id: string, status: string, notes?: string) => {
-    try {
-      const { error: dbError } = await supabase
-        .from("projects")
-        .update({ status, notes, reviewed_at: new Date().toISOString() })
-        .eq("id", id);
-      
-      if (dbError) throw dbError;
-      
-      setProjects(prev => prev.map(p => p.id === id ? { ...p, status } : p));
-      return { error: null };
-    } catch (err: any) {
-      return { error: err };
-    }
+    const { error } = await supabase.from("projects")
+      .update({ status, notes, reviewed_at: new Date().toISOString() }).eq("id", id);
+    if (!error) setProjects(prev => prev.map(p => p.id === id ? { ...p, status } : p));
+    return { error };
   };
 
   const featureProject = async (id: string, order: number) => {
-    try {
-      const { error: dbError } = await supabase
-        .from("projects")
-        .update({ status: "featured", featured_order: order })
-        .eq("id", id);
-      
-      if (dbError) throw dbError;
-      
-      setProjects(prev => prev.map(p => 
-        p.id === id ? { ...p, status: "featured", featured_order: order } : p
-      ));
-      return { error: null };
-    } catch (err: any) {
-      return { error: err };
-    }
+    const { error } = await supabase.from("projects")
+      .update({ status: "featured", featured_order: order }).eq("id", id);
+    if (!error) setProjects(prev => prev.map(p => p.id === id ? { ...p, status: "featured", featured_order: order } : p));
+    return { error };
   };
 
   return { projects, isLoading, error, updateStatus, featureProject };
 }
 
 // ─── 8. useRealtimeListings ───────────────────────────────────────────────────
+// Wraps useListings + Supabase realtime channel for live updates.
+// Channel filter is lowercased to match DB. active=false removes from state.
 export function useRealtimeListings(nftContract: string) {
   const { listings, isLoading, error } = useListings(nftContract);
   const [liveListings, setLiveListings] = useState<Listing[]>([]);
@@ -422,9 +361,7 @@ export function useRealtimeListings(nftContract: string) {
     const channel = supabase
       .channel(`listings:${addr}`)
       .on("postgres_changes", {
-        event: "*", 
-        schema: "public", 
-        table: "listings",
+        event: "*", schema: "public", table: "listings",
         filter: `nft_contract=eq.${addr}`,
       }, (payload) => {
         const row = payload.new as any;
@@ -439,9 +376,7 @@ export function useRealtimeListings(nftContract: string) {
 
         if (payload.eventType === "UPDATE") {
           setLiveListings(prev => {
-            if (!enriched?.active) {
-              return prev.filter(l => l.listing_id !== enriched.listing_id);
-            }
+            if (!enriched?.active) return prev.filter(l => l.listing_id !== enriched.listing_id);
             const exists = prev.some(l => l.listing_id === enriched.listing_id);
             return exists
               ? prev.map(l => l.listing_id === enriched.listing_id ? enriched : l)
@@ -451,9 +386,7 @@ export function useRealtimeListings(nftContract: string) {
 
         if (payload.eventType === "DELETE") {
           const old = payload.old as any;
-          if (old?.listing_id) {
-            setLiveListings(prev => prev.filter(l => l.listing_id !== old.listing_id));
-          }
+          if (old?.listing_id) setLiveListings(prev => prev.filter(l => l.listing_id !== old.listing_id));
         }
       })
       .subscribe();
@@ -465,11 +398,19 @@ export function useRealtimeListings(nftContract: string) {
 }
 
 // ─── 9. useCreatorCollections ─────────────────────────────────────────────────
-// FIXED: Proper Supabase .or() syntax and added total_minted
+// Fetches all collections/projects belonging to a wallet address.
+// Used on StudioPage ("My Studio") to show the creator's deployed collections.
+//
+// Checks BOTH creator_wallet AND creator_address columns to handle:
+//   - Studio-deployed collections (stored as creator_wallet)
+//   - Older or externally added collections (may use creator_address)
+//
+// Merges project + collections data so each result has live stats
+// (floor price, listed count) alongside project metadata (logo, status).
 export function useCreatorCollections(walletAddress: string | undefined) {
   const [collections, setCollections] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isLoading,   setIsLoading]   = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
 
   useEffect(() => {
     if (!walletAddress) {
@@ -485,18 +426,13 @@ export function useCreatorCollections(walletAddress: string | undefined) {
       try {
         const addr = walletAddress.toLowerCase();
 
-        // FIXED: Use proper PostgREST or syntax - comma separated, no spaces around commas
-        // Format: column.ilike.value,column2.ilike.value2
-        const { data: projectRows, error: projectError } = await supabase
+        // 1. Pull all projects where this wallet is the creator
+        //    Check both column names — older rows may use creator_address
+        const { data: projectRows } = await supabase
           .from("projects")
-          .select("id, name, symbol, contract_address, status, logo_url, banner_url, max_supply, mint_price, description, created_at, total_minted, creator_wallet")
-          .or(`creator_wallet.ilike.${addr},creator_address.ilike.${addr}`)
+          .select("id, name, symbol, contract_address, status, logo_url, max_supply, mint_price, description, created_at, total_minted")
+          .or(`creator_wallet.ilike.\( {addr},creator_address.ilike. \){addr}`)
           .order("created_at", { ascending: false });
-
-        if (projectError) {
-          console.error("[useCreatorCollections] Project query error:", projectError);
-          throw projectError;
-        }
 
         const contractsFromProjects = (projectRows || [])
           .map(p => p.contract_address?.toLowerCase())
@@ -505,14 +441,10 @@ export function useCreatorCollections(walletAddress: string | undefined) {
         // 2. For each deployed contract, fetch live stats from collections table
         let collectionRows: any[] = [];
         if (contractsFromProjects.length > 0) {
-          const { data, error: colError } = await supabase
+          const { data } = await supabase
             .from("collections")
-            .select("contract_address, name, slug, floor_price, listed_count, total_supply, total_minted, logo_url, banner_url, verified")
+            .select("contract_address, name, slug, floor_price, listed_count, total_supply, total_minted, logo_url, verified")
             .in("contract_address", contractsFromProjects);
-          
-          if (colError) {
-            console.error("[useCreatorCollections] Collection query error:", colError);
-          }
           collectionRows = data || [];
         }
 
@@ -527,25 +459,22 @@ export function useCreatorCollections(walletAddress: string | undefined) {
         const merged = (projectRows || []).map(proj => {
           const contractLower = proj.contract_address?.toLowerCase();
           const col = colMap[contractLower] || {};
-          
           return {
             ...proj,
             contract_address: contractLower,
-            slug: col.slug || contractLower?.slice(0, 12) || "",
-            floor_price: col.floor_price || 0,
-            listed_count: col.listed_count || 0,
-            total_supply: col.total_supply || proj.max_supply || 0,
-            total_minted: col.total_minted || proj.total_minted || 0,
-            verified: col.verified || false,
-            logo_url: proj.logo_url || col.logo_url || null,
-            banner_url: proj.banner_url || col.banner_url || null,
-            isDeployed: !!contractLower,
+            slug:          col.slug         || contractLower,
+            floor_price:   col.floor_price  || 0,
+            listed_count:  col.listed_count || 0,
+            total_supply:  col.total_supply || proj.max_supply || 0,
+            total_minted:  col.total_minted || proj.total_minted || 0,
+            verified:      col.verified     || false,
+            logo_url:      proj.logo_url    || col.logo_url || null,
+            isDeployed:    !!contractLower,
           };
         });
 
         if (!cancelled) setCollections(merged);
       } catch (e: any) {
-        console.error("[useCreatorCollections] Error:", e);
         if (!cancelled) setError(e.message);
       } finally {
         if (!cancelled) setIsLoading(false);
