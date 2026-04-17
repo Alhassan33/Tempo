@@ -324,7 +324,10 @@ export default function LaunchpadPage() {
 
   // ✅ FIXED: Navigate to the mint page when clicking a project
   function handleProjectClick(project) {
-    navigate(`/launchpad/${project.id}`);
+    // ✅ FIX: Navigate by contract_address (0x…) so MintPage can always look it
+    // up regardless of status. Fall back to slug or id for legacy projects.
+    const target = project.contract_address || project.slug || project.id;
+    navigate(`/launchpad/${target}`);
   }
 
   const featured = useMemo(() => projects.filter(p => p.status === "featured"), [projects]);
