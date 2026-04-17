@@ -343,18 +343,34 @@ export default function CollectionManagerPage() {
     if (!contractAddress || !publicClient) return;
     try {
       const [minted, max, totalP, fees, onchainCreator] = await Promise.all([
-        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "totalMinted" }),
-        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "maxSupply" }),
-        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "totalPhases" }),
+        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "totalMinted" }).catch(() => 0n),
+        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "maxSupply" }).catch(() => 0n),
+        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "totalPhases" }).catch(() => 0n),
         publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "getFeeConfig" }).catch(() => null),
-        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "creator" }),
+        // ✅ creator() may not exist on all contracts — catch and return null
+        publicClient.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: "creator" }).catch(() => null),
       ]);
 
       setChainData({ minted, max, fees, creator: onchainCreator });
 
-      // Authorization: only the on-chain creator can manage
-      if (address && onchainCreator.toLowerCase() === address.toLowerCase()) {
-        setAuthorized(true);
+      // ✅ Authorization: check on-chain creator first, then fall back to Supabase creator_wallet
+      if (address) {
+        if (onchainCreator && onchainCreator.toLowerCase() === address.toLowerCase()) {
+          setAuthorized(true);
+        }
+        // Fallback: check projects table for creator_wallet match
+        // (handles contracts that don't expose creator(), or were deployed externally)
+        else {
+          const { data: proj } = await supabase
+            .from("projects")
+            .select("creator_wallet, creator_address")
+            .eq("contract_address", contractAddress.toLowerCase())
+            .maybeSingle();
+          const storedCreator = (proj?.creator_wallet || proj?.creator_address || "").toLowerCase();
+          if (storedCreator && storedCreator === address.toLowerCase()) {
+            setAuthorized(true);
+          }
+        }
       }
 
       const count   = Number(totalP);
@@ -420,20 +436,38 @@ export default function CollectionManagerPage() {
     </div>
   );
 
-  // ─── Not authorized ───────────────────────────────────────────────────────
-  if (!isConnected || !authorized) return (
+  // ─── Not connected ─────────────────────────────────────────────────────────
+  if (!isConnected) return (
+    <div className="flex flex-col items-center justify-center min-h-[70vh] gap-5 fade-up">
+      <AlertCircle size={40} style={{ color: "#9da7b3" }} />
+      <div className="text-center">
+        <h1 className="text-xl font-extrabold mb-2" style={{ color: "#e6edf3" }}>Connect Your Wallet</h1>
+        <p className="text-sm" style={{ color: "#9da7b3" }}>Connect the wallet that deployed this collection to manage it.</p>
+      </div>
+    </div>
+  );
+
+  // ─── Not authorized ────────────────────────────────────────────────────────
+  // Only shown after loading is complete AND wallet is connected
+  if (!authorized) return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] gap-5 fade-up">
       <AlertCircle size={40} style={{ color: "#EF4444" }} />
       <div className="text-center">
-        <h1 className="text-xl font-extrabold mb-2" style={{ color: "#e6edf3", fontFamily: "Syne, sans-serif" }}>
-          {!isConnected ? "Connect Your Wallet" : "Access Denied"}
-        </h1>
-        <p className="text-sm" style={{ color: "#9da7b3" }}>
-          {!isConnected ? "Connect the wallet that deployed this collection." : "Only the collection creator can manage this dashboard."}
-        </p>
-        {isConnected && chainData?.creator && (
-          <p className="text-xs font-mono mt-2" style={{ color: "#6b7280" }}>Creator: {chainData.creator}</p>
+        <h1 className="text-xl font-extrabold mb-2" style={{ color: "#e6edf3" }}>Access Denied</h1>
+        <p className="text-sm mb-1" style={{ color: "#9da7b3" }}>Only the collection creator can manage this dashboard.</p>
+        {chainData?.creator && (
+          <p className="text-xs font-mono mt-2" style={{ color: "#6b7280" }}>
+            Expected: {chainData.creator.slice(0, 10)}…{chainData.creator.slice(-6)}
+          </p>
         )}
+        <p className="text-xs font-mono mt-1" style={{ color: "#6b7280" }}>
+          Connected: {address?.slice(0, 10)}…{address?.slice(-6)}
+        </p>
+        <button onClick={() => navigate("/studio")}
+          className="mt-4 h-9 px-4 rounded-xl text-sm font-bold"
+          style={{ background: "rgba(34,211,238,0.08)", color: "#22d3ee", border: "1px solid rgba(34,211,238,0.2)", cursor: "pointer" }}>
+          Back to Studio
+        </button>
       </div>
     </div>
   );
