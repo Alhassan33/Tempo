@@ -1,18 +1,16 @@
 // pages/MintPage.jsx
-import { useState, useMemo, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAccount, useChainId } from "wagmi";
 import {
   ArrowLeft, Globe, Twitter, ExternalLink, CheckCircle2,
   Clock, Minus, Plus, Zap, AlertCircle, Rocket, ShieldCheck,
-  Lock, Users, Globe2
+  Lock, Globe2
 } from "lucide-react";
-import { useFeaturedProjects } from "@/hooks/useSupabase";
 import {
   usePhases, useWalletMintState, useMint, useQuoteMintCost,
   usePathUSDBalance, phaseStatus, isPublicPhase, formatPrice,
-  PHASE_OG, PHASE_WHITELIST, PHASE_PUBLIC, PHASE_META,
-  PLATFORM_FEE_RAW,
+  PHASE_META, PLATFORM_FEE_RAW,
 } from "@/hooks/useMint";
 
 const EXPLORER_BASE = "https://explore.tempo.xyz";
@@ -341,6 +339,86 @@ function MintWidget({ phase, phaseId, nftContract, onSuccess }) {
   );
 }
 
+// ─── useProjectBySlug ─────────────────────────────────────────────────────────
+// Finds a project by slug, contract address, or id — any status.
+// Falls back to the collections table if nothing in projects matches.
+function useProjectBySlug(slug) {
+  const [project,  setProject]  = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    if (!slug) { setLoading(false); setNotFound(true); return; }
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setNotFound(false);
+
+      // 1. Try projects table — all statuses, match id, slug, or contract_address
+      const isAddress = slug.startsWith("0x");
+      const addr      = isAddress ? slug.toLowerCase() : null;
+
+      const { data: rows } = await import("@/lib/supabase").then(m =>
+        m.supabase.from("projects").select("*")
+          .or(addr
+            ? `contract_address.ilike.${addr}`
+            : `id.eq.${slug},slug.eq.${slug},name.ilike.${slug}`)
+          .limit(1)
+      ).catch(() => ({ data: null }));
+
+      if (!cancelled && rows?.[0]) {
+        setProject(rows[0]);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Try collections table (for externally added collections)
+      if (addr || !isAddress) {
+        const { data: cols } = await import("@/lib/supabase").then(m =>
+          m.supabase.from("collections").select("*")
+            .or(addr
+              ? `contract_address.ilike.${addr}`
+              : `slug.eq.${slug},name.ilike.${slug}`)
+            .limit(1)
+        ).catch(() => ({ data: null }));
+
+        if (!cancelled && cols?.[0]) {
+          // Wrap collection row as a project-like object
+          const col = cols[0];
+          setProject({
+            id:               col.slug || col.contract_address,
+            name:             col.name,
+            symbol:           "",
+            description:      col.description || "",
+            logo_url:         col.logo_url || null,
+            banner_url:       col.banner_url || null,
+            contract_address: col.contract_address,
+            max_supply:       col.total_supply || 0,
+            mint_price:       col.floor_price ? (Number(col.floor_price) / 1e6) : null,
+            website:          col.website_url || null,
+            twitter:          col.twitter_url || null,
+            status:           "live",
+          });
+          setLoading(false);
+          return;
+        }
+      }
+
+      if (!cancelled) {
+        setNotFound(true);
+        setLoading(false);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, [slug]);
+
+  return { project, loading, notFound };
+}
+
+
 // ─── Main MintPage ────────────────────────────────────────────────────────────
 export default function MintPage() {
   const { slug }      = useParams();
@@ -373,22 +451,22 @@ export default function MintPage() {
 
   if (projectsLoading) return (
     <div className="flex items-center justify-center min-h-[60vh]">
-      <div className="w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: "#22C55E" }} />
+      <div className="w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: "#22d3ee" }} />
     </div>
   );
 
   if (!project) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-6">
-      <Rocket size={40} className="mb-4" style={{ color: "rgba(34,197,94,0.3)" }} />
+      <Rocket size={40} className="mb-4" style={{ color: "rgba(34,211,238,0.3)" }} />
       <p className="font-bold" style={{ color: "#e6edf3" }}>Project not found</p>
-      <button onClick={() => navigate("/launchpad")} className="mt-4 text-sm" style={{ color: "#22C55E", background: "none", border: "none", cursor: "pointer" }}>
+      <button onClick={() => navigate("/launchpad")} className="mt-4 text-sm" style={{ color: "#22d3ee", background: "none", border: "none", cursor: "pointer" }}>
         ← Back to Launchpad
       </button>
     </div>
   );
 
   return (
-    <div className="fade-up px-4 sm:px-6 max-w-5xl mx-auto py-8" style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
+    <div className="fade-up px-4 sm:px-6 max-w-5xl mx-auto py-8">
       {/* Back */}
       <button onClick={() => navigate("/launchpad")}
         className="flex items-center gap-2 text-sm mb-6 hover:opacity-80 transition-opacity"
@@ -416,7 +494,7 @@ export default function MintPage() {
               style={{ border: "3px solid #0b0f14", background: "#161d28" }}>
               {project.logo_url
                 ? <img src={project.logo_url} alt={project.name} className="w-full h-full object-cover" />
-                : <div className="w-full h-full flex items-center justify-center text-xl font-bold" style={{ color: "#22C55E" }}>{project.name[0]}</div>}
+                : <div className="w-full h-full flex items-center justify-center text-xl font-bold" style={{ color: "#22d3ee" }}>{project.name[0]}</div>}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -520,7 +598,7 @@ export default function MintPage() {
               </div>
             ) : !nftContract ? (
               <div className="rounded-2xl p-5 text-center" style={{ background: "#121821", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <Zap size={28} className="mx-auto mb-3" style={{ color: "rgba(34,197,94,0.3)" }} />
+                <Zap size={28} className="mx-auto mb-3" style={{ color: "rgba(34,211,238,0.3)" }} />
                 <p className="text-sm font-bold mb-1" style={{ color: "#e6edf3" }}>Contract Not Deployed</p>
                 <p className="text-xs" style={{ color: "#9da7b3" }}>This project hasn't deployed its contract yet.</p>
               </div>
@@ -545,7 +623,7 @@ export default function MintPage() {
                 <div className="flex items-center justify-between text-xs">
                   <span style={{ color: "#9da7b3" }}>Contract</span>
                   <a href={EXPLORER_BASE + "/address/" + nftContract} target="_blank" rel="noreferrer"
-                    className="font-mono flex items-center gap-1" style={{ color: "#22C55E" }}>
+                    className="font-mono flex items-center gap-1" style={{ color: "#22d3ee" }}>
                     {nftContract.slice(0, 6)}…{nftContract.slice(-4)} <ExternalLink size={10} />
                   </a>
                 </div>
