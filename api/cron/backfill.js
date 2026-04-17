@@ -14,35 +14,41 @@ const publicClient = createPublicClient({
   transport: http("https://rpc.tempo.xyz"),
 });
 
-const NFT_CONTRACT = "0x1Ee82CC5946EdBD88eaf90D6d3C2B5baA4f9966C";
-const CHUNK_SIZE = 25000n; // How many blocks to check per RPC call
-const WINDOW_SIZE = 400000n; // Total blocks to scan before stopping (to prevent Vercel timeout)
+const START_BLOCK = 10101321n; // Your oldest collection deployment block
+const CHUNK_SIZE = 25000n;
+const WINDOW_SIZE = 400000n; // Covers ~29 days of blocks in one run
 
 export default async function handler(req, res) {
-  // 1. Check Security
   const secret = process.env.BACKFILL_SECRET;
   if (secret && req.query.secret !== secret) {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 
+  // ✅ DYNAMIC: Accept contract address from query
+  const nftContract = req.query.address;
+  if (!nftContract || !/^0x[a-fA-F0-9]{40}$/.test(nftContract)) {
+    return res.status(400).json({ ok: false, error: "Missing or invalid ?address=0x..." });
+  }
+
   const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-  const contractAddr = NFT_CONTRACT.toLowerCase();
+  const contractAddr = nftContract.toLowerCase();
   const startTime = Date.now();
 
   try {
-    // 2. Resume from where we last stopped
     const { data: stateRow } = await db.from("indexer_state")
       .select("last_block")
       .eq("contract", `backfill_${contractAddr}`)
       .single();
 
     const latestBlock = await publicClient.getBlockNumber();
-    let from = BigInt(stateRow?.last_block || 0);
     
-    // We only scan a set window (e.g., 100k blocks) per request to avoid Vercel 10s kill
+    // ✅ If never scanned, start from your known oldest block
+    let from = BigInt(stateRow?.last_block || 0);
+    if (from === 0n) from = START_BLOCK;
+
     const targetEnd = from + WINDOW_SIZE > latestBlock ? latestBlock : from + WINDOW_SIZE;
 
-    console.log(`[backfill] Syncing ${contractAddr} from ${from} to ${targetEnd}...`);
+    console.log(`[backfill] ${contractAddr} | Blocks ${from} → ${targetEnd}`);
 
     let totalIndexed = 0;
     let errors = 0;
@@ -52,14 +58,13 @@ export default async function handler(req, res) {
 
       try {
         const logs = await publicClient.getLogs({
-          address: NFT_CONTRACT,
+          address: nftContract, // Uses the dynamic address
           event: parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"),
           fromBlock: from,
           toBlock: to,
         });
 
         if (logs.length > 0) {
-          // Sort ascending so the most recent transfer in the chunk is the one that stays in DB
           logs.sort((a, b) => Number(a.blockNumber) - Number(b.blockNumber));
 
           for (const log of logs) {
@@ -75,23 +80,24 @@ export default async function handler(req, res) {
             if (upsertError) errors++;
             else totalIndexed++;
           }
+          console.log(`[backfill] ${contractAddr} | Chunk ${from}-${to}: ${logs.length} transfers`);
         }
       } catch (e) {
-        console.error(`[backfill] Chunk error at ${from}:`, e.message);
+        console.error(`[backfill] ${contractAddr} | Chunk error ${from}:`, e.message);
         errors++;
       }
 
       from = to + 1n;
     }
 
-    // 3. Save progress to indexer_state so the next click continues from targetEnd
+    // Save progress
     await db.from("indexer_state").upsert({
       contract: `backfill_${contractAddr}`,
       last_block: Number(targetEnd),
       updated_at: new Date().toISOString(),
     });
 
-    // 4. If we reached the end, update the total owner count in collections
+    // Update collection stats if complete
     if (targetEnd === latestBlock) {
       const { count: owners } = await db
         .from("nfts")
@@ -99,8 +105,17 @@ export default async function handler(req, res) {
         .eq("contract_address", contractAddr)
         .neq("owner_address", "0x0000000000000000000000000000000000000000");
 
+      const { count: totalSupply } = await db
+        .from("nfts")
+        .select("*", { count: "exact", head: true })
+        .eq("contract_address", contractAddr);
+
       await db.from("collections")
-        .update({ owners: owners || 0 })
+        .update({ 
+          owners: owners || 0,
+          total_supply: totalSupply || 0,
+          total_minted: totalSupply || 0
+        })
         .eq("contract_address", contractAddr);
     }
 
@@ -108,6 +123,7 @@ export default async function handler(req, res) {
     
     return res.status(200).json({
       ok: true,
+      contract: contractAddr,
       status: targetEnd === latestBlock ? "COMPLETE" : "IN_PROGRESS",
       nfts_indexed: totalIndexed,
       synced_to_block: targetEnd.toString(),
