@@ -44,7 +44,7 @@ async function sync() {
         const transfers = await contract.queryFilter("Transfer", startBlock, targetBlock);
         
         if (transfers.length > 0) {
-          console.log(��� ${transfers.length} new events for ${addr});
+          console.log(`📦 ${transfers.length} new events for ${addr}`);
           for (const log of transfers) {
             await supabase.from('nfts').upsert({
               contract_address: addr,
